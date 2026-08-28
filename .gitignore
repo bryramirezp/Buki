@@ -1,4 +1,15 @@
 downstream/node_modules/
 downstream/dist/
 downstream/.vite/
+buki/node_modules/
+buki/dist/
+buki/.vite/
+buki/.env
+buki/.env.*
+!buki/.env.example
+buki/backend/.venv/
+buki/backend/__pycache__/
+buki/backend/.pytest_cache/
+__pycache__/
+*.pyc
 *.tsbuildinfo

@@ -1,0 +1,1 @@
+"""Buki backend application."""
