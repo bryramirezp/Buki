@@ -1,0 +1,4 @@
+downstream/node_modules/
+downstream/dist/
+downstream/.vite/
+*.tsbuildinfo
