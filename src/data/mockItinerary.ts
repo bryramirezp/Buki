@@ -7,13 +7,13 @@ import type {
 } from '../types'
 
 export const DEFAULT_INTENT =
-  'Tengo toda la tarde, quiero comer algo típico, conocer dos lugares interesantes y caminar no más de veinte minutos entre cada parada.'
+  'I have the whole afternoon. I want to eat something local, visit two interesting places, and walk no more than twenty minutes between each stop.'
 
 export const MOCK_LOCATIONS: TripLocation[] = [
   {
     id: 'plaza-armas',
     name: 'Plaza de Armas',
-    detail: 'Centro de Santiago',
+    detail: 'Santiago Center',
     x: 48,
     y: 53,
     coordinates: { lat: -33.4372, lng: -70.6506 },
@@ -29,7 +29,7 @@ export const MOCK_LOCATIONS: TripLocation[] = [
   {
     id: 'parque-forestal',
     name: 'Parque Forestal',
-    detail: 'Avenida José María Caro',
+    detail: 'José María Caro Avenue',
     x: 25,
     y: 40,
     coordinates: { lat: -33.4334, lng: -70.6472 },
@@ -41,11 +41,11 @@ const MOCK_STOPS: TripPlace[] = [
     id: 'mercado-central',
     name: 'Mercado Central',
     kind: 'food',
-    summary: 'Un almuerzo chileno para empezar con algo local.',
+    summary: 'A Chilean lunch to start with something local.',
     address: 'San Pablo 967',
     availability: 'open',
-    availabilityLabel: 'Abierto ahora',
-    checkedAt: 'Consultado hace 2 min',
+    availabilityLabel: 'Open now',
+    checkedAt: 'Checked 2 min ago',
     x: 75,
     y: 35,
     coordinates: { lat: -33.4329, lng: -70.6527 },
@@ -55,11 +55,11 @@ const MOCK_STOPS: TripPlace[] = [
     id: 'museo-precolombino',
     name: 'Museo Chileno de Arte Precolombino',
     kind: 'culture',
-    summary: 'Una pausa cultural con piezas de toda América.',
+    summary: 'A cultural pause featuring pieces from across the Americas.',
     address: 'Bandera 361',
     availability: 'closed',
-    availabilityLabel: 'Cerrado hoy',
-    checkedAt: 'Consultado hace 2 min',
+    availabilityLabel: 'Closed today',
+    checkedAt: 'Checked 2 min ago',
     x: 57,
     y: 70,
     coordinates: { lat: -33.4351, lng: -70.6505 },
@@ -69,11 +69,11 @@ const MOCK_STOPS: TripPlace[] = [
     id: 'cerro-santa-lucia',
     name: 'Cerro Santa Lucía',
     kind: 'view',
-    summary: 'Un cierre con miradores y una caminata corta.',
+    summary: 'A scenic finish with viewpoints and a short walk.',
     address: 'Terraza Neptuno',
     availability: 'open',
-    availabilityLabel: 'Abierto ahora',
-    checkedAt: 'Consultado hace 2 min',
+    availabilityLabel: 'Open now',
+    checkedAt: 'Checked 2 min ago',
     x: 29,
     y: 84,
     coordinates: { lat: -33.4375, lng: -70.6433 },
@@ -114,13 +114,13 @@ export function getMockItinerary(originId = 'plaza-armas'): TripPlan {
   }))
 
   return {
-    title: 'Una tarde con sabor local',
-    city: 'Santiago Centro',
+    title: 'An afternoon with local flavor',
+    city: 'Santiago Center',
     origin,
     totalWalkingMinutes: legMinutes.reduce((sum, minutes) => sum + minutes, 0),
     stops,
     source: 'mock',
-    checkedAt: 'Datos simulados',
+    checkedAt: 'Simulated data',
   }
 }
 
@@ -130,11 +130,11 @@ export const MOCK_ALTERNATIVE: PlaceAlternative = {
     id: 'centro-cultural-la-moneda',
     name: 'Centro Cultural La Moneda',
     kind: 'culture',
-    summary: 'Una alternativa cultural cercana que sigue abierta.',
+    summary: 'A nearby cultural alternative that is still open.',
     address: 'Plaza de la Ciudadanía 26',
     availability: 'open',
-    availabilityLabel: 'Abierto ahora',
-    checkedAt: 'Consultado hace 2 min',
+    availabilityLabel: 'Open now',
+    checkedAt: 'Checked 2 min ago',
     x: 61,
     y: 59,
     coordinates: { lat: -33.4421, lng: -70.6536 },
@@ -146,5 +146,5 @@ export const MOCK_ALTERNATIVE: PlaceAlternative = {
     minutes: 7,
     meters: 550,
   },
-  reason: 'Conserva el interés cultural y reduce el tramo desde la parada anterior.',
+  reason: 'Keeps the cultural interest while shortening the leg from the previous stop.',
 }

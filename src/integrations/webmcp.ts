@@ -50,13 +50,13 @@ export interface BukiWebMcpActions {
 export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   {
     name: 'search_nearby_places',
-    title: 'Buscar lugares cercanos',
-    description: 'Busca lugares cercanos al origen actual, filtrados opcionalmente por comida, cultura o paseo al aire libre.',
+    title: 'Search nearby places',
+    description: 'Searches for places near the current origin, optionally filtered by food, culture, or outdoor activity.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['food', 'culture', 'view'], description: 'Categoría de interés.' },
-        radiusMeters: { type: 'integer', minimum: 100, maximum: 50000, description: 'Radio de búsqueda en metros.' },
+        kind: { type: 'string', enum: ['food', 'culture', 'view'], description: 'Interest category.' },
+        radiusMeters: { type: 'integer', minimum: 100, maximum: 50000, description: 'Search radius in meters.' },
       },
       additionalProperties: false,
     },
@@ -64,12 +64,12 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'get_place_status',
-    title: 'Consultar estado de un lugar',
-    description: 'Devuelve disponibilidad, dirección y hora de consulta de una parada del plan.',
+    title: 'Get place status',
+    description: 'Returns the availability, address, and check time for a stop in the plan.',
     inputSchema: {
       type: 'object',
       properties: {
-        placeId: { type: 'string', description: 'Identificador de la parada.' },
+        placeId: { type: 'string', description: 'Stop identifier.' },
       },
       required: ['placeId'],
       additionalProperties: false,
@@ -78,13 +78,13 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'compute_walking_route',
-    title: 'Calcular ruta caminando',
-    description: 'Devuelve el tiempo y distancia caminando entre dos lugares del plan actual.',
+    title: 'Compute walking route',
+    description: 'Returns the walking time and distance between two places in the current plan.',
     inputSchema: {
       type: 'object',
       properties: {
-        fromPlaceId: { type: 'string', description: 'Origen del tramo. Usa origin para el punto de partida.' },
-        toPlaceId: { type: 'string', description: 'Destino del tramo.' },
+        fromPlaceId: { type: 'string', description: 'Leg origin. Use origin for the starting point.' },
+        toPlaceId: { type: 'string', description: 'Leg destination.' },
       },
       required: ['toPlaceId'],
       additionalProperties: false,
@@ -93,19 +93,19 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'get_itinerary',
-    title: 'Leer itinerario actual',
-    description: 'Lee el circuito actual, sus paradas, estados, tiempos y fuente de datos.',
+    title: 'Get current itinerary',
+    description: 'Reads the current route, its stops, statuses, times, and data source.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
   {
     name: 'propose_itinerary',
-    title: 'Proponer itinerario',
-    description: 'Prepara una propuesta de plan basada en una intención sin aplicarla automáticamente.',
+    title: 'Propose itinerary',
+    description: 'Prepares a plan proposal based on an intent without applying it automatically.',
     inputSchema: {
       type: 'object',
       properties: {
-        intent: { type: 'string', description: 'Lo que la persona quiere hacer.' },
+        intent: { type: 'string', description: 'What the person wants to do.' },
       },
       required: ['intent'],
       additionalProperties: false,
@@ -114,13 +114,13 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'replace_stop',
-    title: 'Reemplazar parada',
-    description: 'Propone un reemplazo para una parada cerrada; solo lo aplica si apply es true.',
+    title: 'Replace stop',
+    description: 'Proposes a replacement for a closed stop; applies it only when apply is true.',
     inputSchema: {
       type: 'object',
       properties: {
-        stopId: { type: 'string', description: 'Identificador de la parada a reemplazar.' },
-        apply: { type: 'boolean', description: 'Si es true, hace visible el reemplazo en el plan.' },
+        stopId: { type: 'string', description: 'Identifier of the stop to replace.' },
+        apply: { type: 'boolean', description: 'When true, makes the replacement visible in the plan.' },
       },
       required: ['stopId'],
       additionalProperties: false,
@@ -128,12 +128,12 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'focus_stop',
-    title: 'Enfocar parada',
-    description: 'Mueve la tarjeta de siguiente parada a una parada concreta del circuito.',
+    title: 'Focus stop',
+    description: 'Moves the next-stop card to a specific stop in the route.',
     inputSchema: {
       type: 'object',
       properties: {
-        stopId: { type: 'string', description: 'Identificador de la parada.' },
+        stopId: { type: 'string', description: 'Stop identifier.' },
       },
       required: ['stopId'],
       additionalProperties: false,
@@ -141,12 +141,12 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'set_origin',
-    title: 'Cambiar punto de partida',
-    description: 'Cambia el origen del plan a uno de los puntos disponibles en Buki.',
+    title: 'Set starting point',
+    description: 'Changes the plan origin to one of the starting points available in Buki.',
     inputSchema: {
       type: 'object',
       properties: {
-        locationId: { type: 'string', description: 'Identificador del punto de partida.' },
+        locationId: { type: 'string', description: 'Starting point identifier.' },
       },
       required: ['locationId'],
       additionalProperties: false,
@@ -154,12 +154,12 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'update_intent',
-    title: 'Actualizar intención',
-    description: 'Actualiza el texto de intención visible para la persona sin inventar un nuevo plan.',
+    title: 'Update intent',
+    description: 'Updates the intent text visible to the person without inventing a new plan.',
     inputSchema: {
       type: 'object',
       properties: {
-        intent: { type: 'string', description: 'Nueva intención de la persona.' },
+        intent: { type: 'string', description: 'The person’s new intent.' },
       },
       required: ['intent'],
       additionalProperties: false,
@@ -167,14 +167,14 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   },
   {
     name: 'advance_to_next_stop',
-    title: 'Avanzar a siguiente parada',
-    description: 'Marca el tramo actual como iniciado y enfoca la siguiente parada disponible.',
+    title: 'Advance to next stop',
+    description: 'Marks the current leg as started and focuses the next available stop.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'get_buki_context',
-    title: 'Leer contexto de Buki',
-    description: 'Devuelve el estado resumido de Buki, la disponibilidad WebMCP y el origen de datos del plan.',
+    title: 'Get Buki context',
+    description: 'Returns a summary of Buki, WebMCP availability, and the plan data source.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
@@ -197,7 +197,7 @@ const ACTIONS_BY_TOOL: Record<WebMcpToolName, keyof BukiWebMcpActions> = {
 function summarizeResult(result: unknown) {
   if (typeof result === 'string') return result.slice(0, 120)
   if (result && typeof result === 'object' && 'status' in result) return String(result.status)
-  return 'Resultado entregado al agente'
+  return 'Result delivered to the agent'
 }
 
 export function createRegisteredTool(

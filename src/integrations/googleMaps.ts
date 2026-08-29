@@ -28,9 +28,9 @@ const CATEGORY_TYPES: Record<PlaceKind, string[]> = {
 }
 
 const CATEGORY_LABELS: Record<PlaceKind, string> = {
-  food: 'comida local',
-  culture: 'cultura',
-  view: 'paseo al aire libre',
+  food: 'local food',
+  culture: 'culture',
+  view: 'outdoor activity',
 }
 
 export async function loadGoogleMaps(apiKey: string) {
@@ -41,7 +41,7 @@ export async function loadGoogleMaps(apiKey: string) {
 
   if (!loadPromise) {
     configuredKey = apiKey
-    setOptions({ key: apiKey, v: 'weekly', language: 'es' })
+    setOptions({ key: apiKey, v: 'weekly', language: 'en' })
     loadPromise = Promise.all([
       importLibrary('maps'),
       importLibrary('marker'),
@@ -131,7 +131,7 @@ async function findNearbyByKind(origin: GeoPoint, kind: PlaceKind): Promise<Near
     locationRestriction: { center: origin, radius: 1800 },
     maxResultCount: 3,
     rankPreference: SearchNearbyRankPreference.POPULARITY,
-    language: 'es',
+    language: 'en',
   })
 
   return response.places
@@ -172,22 +172,22 @@ async function fetchPlaceDetails(candidate: NearbyCandidate): Promise<TripPlace 
         : 'unknown'
 
   const availabilityLabel = place.businessStatus === 'CLOSED_PERMANENTLY'
-    ? 'Cerrado permanentemente'
+    ? 'Permanently closed'
     : isOpen === true
-      ? 'Abierto ahora'
+      ? 'Open now'
       : isOpen === false
-        ? 'Cerrado ahora'
-        : 'Estado no disponible'
+        ? 'Closed now'
+        : 'Status unavailable'
 
   return {
     id: place.id,
     name: place.displayName,
     kind,
-    summary: place.editorialSummary ?? `Una opción de ${CATEGORY_LABELS[kind]} encontrada cerca de ti.`,
-    address: place.formattedAddress ?? 'Dirección no disponible',
+    summary: place.editorialSummary ?? `A ${CATEGORY_LABELS[kind]} option found near you.`,
+    address: place.formattedAddress ?? 'Address unavailable',
     availability,
     availabilityLabel,
-    checkedAt: `Consultado ahora · ${new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`,
+    checkedAt: `Checked now · ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
     x: 26 + (kind === 'food' ? 48 : kind === 'culture' ? 30 : 8),
     y: 36 + (kind === 'food' ? 0 : kind === 'culture' ? 28 : 48),
     coordinates: { lat: place.location.lat(), lng: place.location.lng() },
@@ -289,7 +289,7 @@ export async function buildGoogleTripPlan(
     totalWalkingMinutes: stops.reduce((sum, stop) => sum + stop.walkFromPrevious.minutes, 0),
     stops,
     source: 'google-maps',
-    checkedAt: `Google Maps · ${new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`,
+    checkedAt: `Google Maps · ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
     routeWarnings: route.warnings,
   }
 }

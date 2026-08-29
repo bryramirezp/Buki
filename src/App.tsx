@@ -29,9 +29,9 @@ const isMock = mode === 'mock'
 const DEFAULT_MAP_CENTER = { lat: -33.4372, lng: -70.6506 }
 
 const KIND_LABELS = {
-  food: 'Comer algo típico',
-  culture: 'Cultura',
-  view: 'Mirador',
+  food: 'Eat something local',
+  culture: 'Culture',
+  view: 'Viewpoint',
 } as const
 
 const KIND_SYMBOLS = {
@@ -46,13 +46,13 @@ function formatDistance(meters: number) {
 
 function getGoogleErrorMessage(error: unknown) {
   if (error instanceof Error) {
-    if (error.message === 'GOOGLE_MAPS_KEY_MISSING') return 'Falta configurar la clave de Google Maps para buscar datos reales.'
-    if (error.message === 'GOOGLE_MAPS_NOT_ENOUGH_PLACES') return 'Google Maps no encontró suficientes lugares cercanos para armar el circuito.'
+    if (error.message === 'GOOGLE_MAPS_KEY_MISSING') return 'Configure a Google Maps key to search real places.'
+    if (error.message === 'GOOGLE_MAPS_NOT_ENOUGH_PLACES') return 'Google Maps did not find enough nearby places to build the route.'
     if (error.message.includes('REQUEST_DENIED') || error.message.includes('ApiNotActivated')) {
-      return 'Google Maps rechazó la solicitud. Revisa APIs activadas, restricciones y facturación de la clave.'
+      return 'Google Maps rejected the request. Check enabled APIs, restrictions, and key billing.'
     }
   }
-  return 'No pudimos consultar Google Maps ahora. El recorrido simulado sigue disponible.'
+  return 'We could not query Google Maps right now. The simulated route is still available.'
 }
 
 function App() {
@@ -154,19 +154,19 @@ function App() {
     .join(' ')
 
   const serverLabel = {
-    mock: 'Funciones simuladas',
-    checking: 'Comprobando conexión',
-    online: 'Funciones conectadas',
-    offline: 'Funciones pendientes',
+    mock: 'Mock functions',
+    checking: 'Checking connection',
+    online: 'Functions connected',
+    offline: 'Functions unavailable',
   }[serverState]
 
   const mapLabel = mapState === 'ready'
-    ? plan.source === 'google-maps' ? 'Google Maps · real' : 'Google Maps listo'
+      ? plan.source === 'google-maps' ? 'Google Maps · real' : 'Google Maps ready'
     : mapState === 'loading'
       ? 'Cargando Google Maps'
       : mapState === 'error'
-        ? 'Mock · Maps no disponible'
-        : 'Mock · sin clave de Maps'
+        ? 'Mock · Maps unavailable'
+        : 'Mock · no Maps key'
 
   function changeLocation(locationId: string) {
     const nextLocation = MOCK_LOCATIONS.find((location) => location.id === locationId)
@@ -179,30 +179,30 @@ function App() {
     setActiveStopIndex(0)
     setRealPlanState('idle')
     if (googleMapRef.current && nextLocation.coordinates) moveGoogleMap(googleMapRef.current, nextLocation.coordinates)
-    setNotice(`Punto de partida actualizado: ${nextLocation.name}.`)
+    setNotice(`Starting point updated: ${nextLocation.name}.`)
   }
 
   function useSimulatedLocation() {
     changeLocation('plaza-armas')
     setLocationState('simulated')
-    setNotice('Usando tu ubicación simulada cerca de Plaza de Armas.')
+    setNotice('Using a simulated location near Plaza de Armas.')
   }
 
   function requestDeviceLocation() {
     if (!navigator.geolocation) {
       setLocationState('unsupported')
-      setNotice('Este navegador no permite consultar tu ubicación. Puedes elegir un punto manual.')
+      setNotice('This browser does not support location access. You can choose a point manually.')
       return
     }
 
     setLocationState('requesting')
-    setNotice('Esperando permiso para consultar tu ubicación…')
+    setNotice('Waiting for permission to access your location…')
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         const nextOrigin: TripLocation = {
           id: 'current-location',
-          name: 'Mi ubicación actual',
-          detail: 'Ubicación del dispositivo',
+          name: 'My current location',
+          detail: 'Device location',
           x: 48,
           y: 53,
           coordinates: { lat: coords.latitude, lng: coords.longitude },
@@ -210,16 +210,16 @@ function App() {
         setLocationState('granted')
         setSelectedLocationId(nextOrigin.id)
         setOrigin(nextOrigin)
-        setPlan({ ...getMockItinerary(), origin: nextOrigin, city: 'Cerca de ti' })
+        setPlan({ ...getMockItinerary(), origin: nextOrigin, city: 'Near you' })
         setReplacementApplied(false)
         setActiveStopIndex(0)
         setRealPlanState('idle')
         if (googleMapRef.current && nextOrigin.coordinates) moveGoogleMap(googleMapRef.current, nextOrigin.coordinates)
-        setNotice('Ubicación confirmada. Ahora puedes buscar lugares reales cerca de ti.')
+        setNotice('Location confirmed. You can now find real places nearby.')
       },
       () => {
         setLocationState('denied')
-        setNotice('No se concedió el permiso de ubicación. Puedes elegir un punto manual o usar la ubicación simulada.')
+        setNotice('Location permission was not granted. You can choose a point manually or use the simulated location.')
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     )
@@ -233,23 +233,23 @@ function App() {
     return buildGoogleTripPlan(
       controller,
       origin,
-      'Una ruta para explorar ahora',
+      'A route to explore now',
       origin.detail,
     )
   }
 
   async function searchRealPlan() {
     if (!mapsApiKey) {
-      setNotice('Agrega VITE_GOOGLE_MAPS_API_KEY en tu entorno local para consultar lugares reales.')
+      setNotice('Add VITE_GOOGLE_MAPS_API_KEY to your local environment to query real places.')
       return
     }
     if (!origin.coordinates) {
-      setNotice('Confirma un punto de partida antes de buscar lugares reales.')
+      setNotice('Confirm a starting point before searching for real places.')
       return
     }
 
     setRealPlanState('loading')
-    setNotice('Consultando lugares, horarios y ruta caminable…')
+    setNotice('Querying places, opening hours, and walking route…')
     try {
       const realPlan = await fetchRealPlan()
       setPlan(realPlan)
@@ -257,8 +257,8 @@ function App() {
       setActiveStopIndex(0)
       setRealPlanState('ready')
       setNotice(realPlan.routeWarnings?.length
-        ? 'Plan real listo. Revisa la advertencia de caminata en la ruta.'
-        : `Plan real listo con ${realPlan.stops.length} lugares cercanos.`)
+        ? 'Real plan ready. Review the route walking warning.'
+        : `Real plan ready with ${realPlan.stops.length} nearby places.`)
     } catch (error) {
       setRealPlanState('error')
       setNotice(getGoogleErrorMessage(error))
@@ -268,28 +268,28 @@ function App() {
   function submitIntent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setNotice(plan.source === 'google-maps'
-      ? 'Intención actualizada. Vuelve a buscar lugares reales para aplicar nuevos criterios.'
-      : 'Intención guardada. Este plan continúa usando datos simulados.')
+      ? 'Intent updated. Find real places again to apply the new criteria.'
+      : 'Intent saved. This plan still uses simulated data.')
   }
 
   function moveToNextStop() {
     if (activeStopIndex >= availableStops.length - 1) {
-      setNotice('Llegaste al final del circuito. Puedes volver a cualquier parada del plan.')
+      setNotice('You reached the end of the route. You can return to any stop in the plan.')
       return
     }
     const nextIndex = activeStopIndex + 1
     setActiveStopIndex(nextIndex)
-    setNotice(`Siguiente: ${availableStops[nextIndex].place.name}.`)
+    setNotice(`Next: ${availableStops[nextIndex].place.name}.`)
   }
 
   function applyReplacement() {
     setReplacementApplied(true)
-    setNotice(`Reemplazo aplicado: ${MOCK_ALTERNATIVE.place.name}.`)
+    setNotice(`Replacement applied: ${MOCK_ALTERNATIVE.place.name}.`)
   }
 
   function undoReplacement() {
     setReplacementApplied(false)
-    setNotice('Reemplazo deshecho. La parada original vuelve a estar marcada como cerrada.')
+    setNotice('Replacement undone. The original stop is marked as closed again.')
   }
 
   function serializePlanData(currentPlan: typeof plan, currentStops: typeof effectiveStops, currentWalkingMinutes: number) {
@@ -297,7 +297,7 @@ function App() {
       title: currentPlan.title,
       city: currentPlan.city,
       source: currentPlan.source ?? 'mock',
-      checkedAt: currentPlan.checkedAt ?? 'Datos simulados',
+      checkedAt: currentPlan.checkedAt ?? 'Simulated data',
       origin: { id: currentPlan.origin.id, name: currentPlan.origin.name, detail: currentPlan.origin.detail },
       totalWalkingMinutes: currentWalkingMinutes,
       stops: currentStops.map((stop) => ({
@@ -341,7 +341,7 @@ function App() {
       return {
         status: 'ok',
         source: 'mock',
-        message: 'Google Maps no está configurado; se devolvieron datos simulados.',
+        message: 'Google Maps is not configured; simulated data was returned.',
         places: effectiveStops
           .filter((stop) => !requestedKind || stop.place.kind === requestedKind)
           .map((stop) => ({ id: stop.place.id, name: stop.place.name, kind: stop.place.kind, availability: stop.place.availability })),
@@ -367,18 +367,18 @@ function App() {
     getItinerary: serializePlan,
     proposeItinerary(input) {
       const requestedIntent = typeof input.intent === 'string' ? input.intent : intent
-      setNotice('Un agente preparó una propuesta visible sobre el plan actual.')
+      setNotice('An agent prepared a proposal visible on the current plan.')
       return { status: 'proposal', intent: requestedIntent, itinerary: serializePlan(), applied: false }
     },
     replaceStop(input) {
       const stop = findToolStop(input)
       if (!stop) throw new Error('STOP_NOT_FOUND')
       if (!usingMockRepair || stop.id !== MOCK_ALTERNATIVE.replacesStopId) {
-        return { status: 'unavailable', message: 'Esta fase solo tiene un reemplazo simulado para la parada cultural.' }
+        return { status: 'unavailable', message: 'This phase only has a simulated replacement for the culture stop.' }
       }
       const shouldApply = input.apply === true
       if (shouldApply) applyReplacement()
-      else setNotice('Un agente propuso reemplazar la parada; aún no se ha aplicado.')
+      else setNotice('An agent proposed replacing the stop; it has not been applied yet.')
       return {
         status: shouldApply ? 'applied' : 'proposal',
         replacedStopId: stop.id,
@@ -392,12 +392,12 @@ function App() {
       const nextIndex = availableStops.findIndex((item) => item.id === stop.id)
       if (nextIndex < 0) throw new Error('STOP_NOT_AVAILABLE')
       setActiveStopIndex(nextIndex)
-      setNotice(`Siguiente parada enfocada: ${stop.place.name}.`)
+      setNotice(`Next stop focused: ${stop.place.name}.`)
       return { status: 'ok', focusedStopId: stop.id, name: stop.place.name }
     },
     setOrigin(input) {
       const locationId = typeof input.locationId === 'string' ? input.locationId : ''
-      if (locationId === 'current-location') return { status: 'needs_user_consent', message: 'La ubicación del dispositivo debe autorizarla la persona.' }
+      if (locationId === 'current-location') return { status: 'needs_user_consent', message: 'The person must authorize device location access.' }
       const location = MOCK_LOCATIONS.find((item) => item.id === locationId)
       if (!location) throw new Error('LOCATION_NOT_FOUND')
       changeLocation(locationId)
@@ -407,7 +407,7 @@ function App() {
       const nextIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
       if (!nextIntent) throw new Error('INTENT_REQUIRED')
       setIntent(nextIntent)
-      setNotice('Intención actualizada por un agente; el plan aún no fue recalculado.')
+      setNotice('Intent updated by an agent; the plan has not been recalculated yet.')
       return { status: 'ok', intent: nextIntent, planUpdated: false }
     },
     advanceToNextStop() {
@@ -431,7 +431,7 @@ function App() {
 
   return (
     <main className={`app-shell ${mapState === 'ready' ? 'has-real-map' : ''}`}>
-      <section className={`map-stage ${mapState === 'ready' ? 'is-google-map' : ''}`} aria-label={mapState === 'ready' ? 'Mapa real del recorrido' : 'Mapa simulado del recorrido'}>
+      <section className={`map-stage ${mapState === 'ready' ? 'is-google-map' : ''}`} aria-label={mapState === 'ready' ? 'Real route map' : 'Simulated route map'}>
         <div ref={mapContainerRef} className={`google-map-canvas ${mapState === 'ready' ? 'is-visible' : 'is-hidden'}`} aria-hidden={mapState !== 'ready'} />
         <div className="map-grid" aria-hidden="true" />
         <svg className="map-streets" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -471,7 +471,7 @@ function App() {
             <div
               className="map-marker map-origin"
               style={{ left: `${plan.origin.x}%`, top: `${plan.origin.y}%` }}
-              aria-label={`Punto de partida: ${plan.origin.name}`}
+              aria-label={`Starting point: ${plan.origin.name}`}
             >
               <span className="origin-ping" />
               <span className="origin-core" />
@@ -497,14 +497,14 @@ function App() {
 
         <div className="map-footer">
           <div>
-            <strong>{effectiveStops.length} paradas</strong>
+            <strong>{effectiveStops.length} stops</strong>
             <span>·</span>
-            <strong>{totalWalkingMinutes} min caminando</strong>
+            <strong>{totalWalkingMinutes} min walking</strong>
           </div>
           <span>
             {plan.source === 'google-maps'
-              ? `${plan.checkedAt ?? 'Google Maps'}${plan.routeWarnings?.length ? ' · Revisa advertencias' : ''}`
-              : mapError || 'Fallback simulado · agrega una clave para datos reales'}
+              ? `${plan.checkedAt ?? 'Google Maps'}${plan.routeWarnings?.length ? ' · Review warnings' : ''}`
+              : mapError || 'Simulated fallback · add a key for real data'}
           </span>
         </div>
       </section>
@@ -514,9 +514,9 @@ function App() {
         <div className="plan-content">
           <header className="plan-header">
             <div>
-              <p className="eyebrow">Tu plan de esta tarde</p>
+              <p className="eyebrow">Your plan for this afternoon</p>
               <h1 id="plan-title">{plan.title}</h1>
-              <p className="plan-location">{plan.city} · {totalWalkingMinutes} min de caminata</p>
+            <p className="plan-location">{plan.city} · {totalWalkingMinutes} min walking</p>
             </div>
             <span className={`plan-status ${plan.source === 'google-maps' ? 'is-real' : ''}`}>
               {plan.source === 'google-maps' ? 'Real' : 'Mock'}
@@ -524,7 +524,7 @@ function App() {
           </header>
 
           <form className="intent-form" onSubmit={submitIntent}>
-            <label htmlFor="intent">¿Qué quieres hacer?</label>
+            <label htmlFor="intent">What do you want to do?</label>
             <textarea
               id="intent"
               value={intent}
@@ -532,25 +532,25 @@ function App() {
               rows={3}
             />
             <button className="primary-button" type="submit">
-              Actualizar intención <span aria-hidden="true">↗</span>
+              Update intent <span aria-hidden="true">↗</span>
             </button>
           </form>
 
           <section className="location-card" aria-labelledby="location-title">
             <div className="section-heading">
               <div>
-                <p className="section-kicker">Punto de partida</p>
-                <h2 id="location-title">¿Desde dónde sales?</h2>
+                <p className="section-kicker">Starting point</p>
+                <h2 id="location-title">Where are you starting?</h2>
               </div>
               <span className="location-icon" aria-hidden="true">⌖</span>
             </div>
             <select
-              aria-label="Seleccionar punto de partida"
+              aria-label="Select starting point"
               value={selectedLocationId}
               onChange={(event) => changeLocation(event.target.value)}
             >
               {selectedLocationId === 'current-location' && (
-                <option value="current-location">Mi ubicación actual · dispositivo</option>
+                <option value="current-location">My current location · device</option>
               )}
               {MOCK_LOCATIONS.map((location) => (
                 <option key={location.id} value={location.id}>
@@ -560,40 +560,40 @@ function App() {
             </select>
             <div className="location-actions">
               <button className="text-button" type="button" onClick={requestDeviceLocation} disabled={locationState === 'requesting'}>
-                <span aria-hidden="true">◎</span> {locationState === 'requesting' ? 'Esperando permiso…' : 'Usar mi ubicación real'}
+                <span aria-hidden="true">◎</span> {locationState === 'requesting' ? 'Waiting for permission…' : 'Use my real location'}
               </button>
               <button className="text-button secondary" type="button" onClick={useSimulatedLocation}>
-                Usar ubicación simulada
+                Use simulated location
               </button>
             </div>
             {mapsApiKey ? (
               <button className="real-search-button" type="button" onClick={() => void searchRealPlan()} disabled={realPlanState === 'loading'}>
-                <span>{realPlanState === 'loading' ? 'Consultando Google Maps…' : 'Buscar lugares reales cerca'}</span>
+                <span>{realPlanState === 'loading' ? 'Querying Google Maps…' : 'Find real places nearby'}</span>
                 <span aria-hidden="true">↗</span>
               </button>
             ) : (
-              <p className="key-hint">Para activar el mapa real, configura <code>VITE_GOOGLE_MAPS_API_KEY</code>.</p>
+              <p className="key-hint">To activate the real map, configure <code>VITE_GOOGLE_MAPS_API_KEY</code>.</p>
             )}
           </section>
 
           {notice && <p className="notice" aria-live="polite">{notice}</p>}
-          {locationState === 'denied' && <p className="state-hint">Permiso de ubicación denegado: seguimos con el punto manual.</p>}
-          {locationState === 'unsupported' && <p className="state-hint">Este navegador no expone geolocalización: seguimos con el punto manual.</p>}
+          {locationState === 'denied' && <p className="state-hint">Location permission denied: continuing with the manual point.</p>}
+          {locationState === 'unsupported' && <p className="state-hint">This browser does not expose geolocation: continuing with the manual point.</p>}
 
           {currentStop && (
             <section className="next-stop-card" aria-labelledby="next-stop-title">
               <div className="next-stop-topline">
-                <p className="section-kicker">Siguiente parada</p>
+            <p className="section-kicker">Next stop</p>
                 <span>{currentStop.sequence.toString().padStart(2, '0')} / {effectiveStops.length.toString().padStart(2, '0')}</span>
               </div>
               <h2 id="next-stop-title">{currentStop.place.name}</h2>
               <p>{currentStop.place.summary}</p>
               <div className="next-stop-meta">
-                <span>{currentStop.walkFromPrevious.minutes} min desde aquí</span>
+                <span>{currentStop.walkFromPrevious.minutes} min from here</span>
                 <span>{formatDistance(currentStop.walkFromPrevious.meters)}</span>
               </div>
               <button className="dark-button" type="button" onClick={moveToNextStop}>
-                {activeStopIndex >= availableStops.length - 1 ? 'Marcar circuito completo' : 'Empezar este tramo'}
+                {activeStopIndex >= availableStops.length - 1 ? 'Mark route complete' : 'Start this leg'}
                 <span aria-hidden="true">→</span>
               </button>
             </section>
@@ -602,10 +602,10 @@ function App() {
           <section className="stops-section" aria-labelledby="stops-title">
             <div className="section-heading stops-heading">
               <div>
-                <p className="section-kicker">Circuito sugerido</p>
-                <h2 id="stops-title">{plan.source === 'google-maps' ? 'Lugares cerca de ti' : 'Tres paradas, sin apuro'}</h2>
+                <p className="section-kicker">Suggested route</p>
+                <h2 id="stops-title">{plan.source === 'google-maps' ? 'Places near you' : 'Three relaxed stops'}</h2>
               </div>
-              <span className="walking-limit">Máx. 20 min / tramo</span>
+              <span className="walking-limit">Max. 20 min / leg</span>
             </div>
 
             <div className="stops-list">
@@ -628,8 +628,8 @@ function App() {
             <span className={`mock-dot ${plan.source === 'google-maps' ? 'is-real' : ''}`} />
             <span>
               {plan.source === 'google-maps'
-                ? `${plan.checkedAt ?? 'Google Maps'} · Los datos pueden cambiar.`
-                : `Datos simulados para validar el recorrido${mapsApiKey ? '; usa el botón de Google Maps para consultar datos reales.' : '.'}`}
+                ? `${plan.checkedAt ?? 'Google Maps'} · Data may change.`
+                : `Simulated data for validating the route${mapsApiKey ? '; use the Google Maps button to query real data.' : '.'}`}
             </span>
           </footer>
         </div>
@@ -673,7 +673,7 @@ function StopCard({
       {showWalking && (
         <div className="walking-connector">
           <span className="connector-line" />
-          <span><strong>{stop.walkFromPrevious.minutes} min</strong> · {formatDistance(stop.walkFromPrevious.meters)} caminando</span>
+          <span><strong>{stop.walkFromPrevious.minutes} min</strong> · {formatDistance(stop.walkFromPrevious.meters)} walking</span>
         </div>
       )}
       <article className={`stop-card ${isCurrent ? 'is-current' : ''} ${isClosed ? 'is-closed' : ''}`}>
@@ -693,18 +693,18 @@ function StopCard({
           </div>
           {place.mapsUrl && (
             <a className="maps-link" href={place.mapsUrl} target="_blank" rel="noreferrer">
-              Ver ficha en Google Maps ↗
+              View on Google Maps ↗
             </a>
           )}
 
           {isClosed && !replacementApplied && (
             <div className="repair-box">
               <div>
-                <strong>Esta parada cambió</strong>
-                <span>Encontramos un reemplazo cultural a 7 min.</span>
+                <strong>This stop changed</strong>
+                <span>We found a cultural replacement 7 min away.</span>
               </div>
               <button className="repair-button" type="button" onClick={onApplyReplacement}>
-                Ver reemplazo <span aria-hidden="true">↗</span>
+                View replacement <span aria-hidden="true">↗</span>
               </button>
             </div>
           )}
@@ -712,10 +712,10 @@ function StopCard({
           {replacementApplied && (
             <div className="replacement-box">
               <div>
-                <strong>Reemplazo aplicado</strong>
+                <strong>Replacement applied</strong>
                 <span>{MOCK_ALTERNATIVE.reason}</span>
               </div>
-              <button className="undo-button" type="button" onClick={onUndoReplacement}>Deshacer</button>
+              <button className="undo-button" type="button" onClick={onUndoReplacement}>Undo</button>
             </div>
           )}
         </div>

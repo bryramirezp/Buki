@@ -1,236 +1,236 @@
-# Buki — Plan de construcción
+# Buki — Build Plan
 
-Estado: Fase 3 implementada; WebMCP base incorporado; falta validar con una clave restringida de Google Maps
-Escenario de validación inicial: centro de Santiago de Chile  
-Documento base: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
+Status: Phase 3 implemented; WebMCP foundation included; validation with a restricted Google Maps key is pending.
+Initial validation scenario: Santiago Center, Chile.
+Base document: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
-## 1. Dirección del producto
+## 1. Product direction
 
-Buki ayuda a una persona que está en una ciudad y quiere decidir qué hacer ahora. La persona escribe su intención en lenguaje natural y recibe un pequeño circuito caminable con lugares reales, horarios, distancias y una alternativa si algo cambia. La ciudad no está fijada a Santiago: la experiencia puede operar en cualquier lugar con cobertura y datos disponibles del proveedor de mapas seleccionado.
+Buki helps a person in any city decide what to do right now. They write their intent in natural language and receive a small walking route with real places, opening information, distances, and an alternative if something changes. The city is not fixed to Santiago: the experience can operate anywhere with coverage and data from the selected map provider.
 
-> “Estoy en el centro de Santiago. Tengo toda la tarde, quiero comer algo típico, conocer dos lugares interesantes y caminar no más de veinte minutos entre cada parada.”
+> “I am in Santiago Center. I have the whole afternoon, want to eat something local, visit two interesting places, and walk no more than twenty minutes between each stop.”
 
-La experiencia principal ocurre dentro de Buki: el mapa queda incrustado en la aplicación, como en una aplicación de movilidad. El usuario no debe salir a otra aplicación para entender el plan o seguir la siguiente parada.
+The main experience happens inside Buki: the map is embedded in the application, like a mobility app. The user should not need to leave the app to understand the plan or follow the next stop.
 
-WebMCP es una capa interna para que un agente pueda consultar y adaptar el plan. No es la promesa principal del producto.
+WebMCP is an internal layer that lets an agent inspect and adapt the plan. It is not the product's primary promise.
 
-## 2. Estrategia de migración
+## 2. Migration strategy
 
-No se copiarán archivos completos entre proyectos.
+Complete files will not be copied between projects.
 
-### Se conserva de `proyecto-mapa-ia-local`
+### Preserved from `proyecto-mapa-ia-local`
 
-- Modelo conceptual de lugares e itinerarios.
-- Descubrimiento geográfico como punto de partida.
-- FastAPI como referencia histórica de arquitectura, no como runtime de Buki.
-- Abstracción de proveedor LLM.
-- Prompt y validación de JSON estructurado.
-- Pruebas multiciudad como metodología.
+- Conceptual model for places and itineraries.
+- Geographic discovery as a starting point.
+- FastAPI as a historical architecture reference, not Buki's runtime.
+- LLM provider abstraction.
+- Prompt and structured JSON validation.
+- Multi-city testing as a methodology.
 
-### Se conserva del prototipo WebMCP anterior
+### Preserved from the previous WebMCP prototype
 
-- React, Vite y TypeScript.
-- Registro de herramientas WebMCP.
-- Historial de acciones del agente.
-- Patrón propuesta → validación → confirmación.
-- Pruebas E2E con Playwright.
-- Degradación manual cuando WebMCP no está disponible.
+- React, Vite, and TypeScript.
+- WebMCP tool registration.
+- Agent action history.
+- Proposal → validation → confirmation pattern.
+- Playwright E2E tests.
+- Manual fallback when WebMCP is unavailable.
 
-### Se reescribe
+### Rewritten
 
-- Entrada basada en clics, para pasar a lenguaje natural.
-- Selectores de mood y duración, para pasar a restricciones interpretadas.
-- Línea visual entre coordenadas, para pasar a rutas caminando reales.
-- Layout de escritorio, para convertirlo en experiencia mobile-first.
-- Llamadas LLM desde el navegador, para llevar secretos y orquestación a funciones server-side de Vercel.
-- El contexto empresarial anterior, para enfocarlo en una persona explorando una ciudad; Santiago será la primera validación de campo.
+- Click-based input, replaced with natural language.
+- Mood and duration selectors, replaced with interpreted constraints.
+- Visual coordinate line, replaced with real walking routes.
+- Desktop layout, converted into a mobile-first experience.
+- Browser-side LLM calls, moved to Vercel server-side functions to protect secrets and orchestration.
+- The previous business context, refocused on a person exploring a city; Santiago is the first field validation.
 
-### Se mantiene fuera del producto hasta validar
+### Kept outside the product until validation
 
-- `proyecto-mapa-ia-local/` como referencia.
-- El prototipo WebMCP anterior no forma parte de la nueva aplicación.
+- `proyecto-mapa-ia-local/` as a reference.
+- The previous WebMCP prototype is not part of the new application.
 
-La nueva aplicación vivirá inicialmente en `proyecto-webmcp/buki/`.
+The Buki application is now located at the repository root so Vercel can detect the Vite project automatically.
 
-## 3. Arquitectura objetivo
+## 3. Target architecture
 
 ```text
-Petición natural + ubicación
+Natural request + location
             ↓
-Extracción de restricciones
+Constraint extraction
             ↓
-Lugares reales y estado actual
+Real places and current status
             ↓
-Rutas caminando
+Walking routes
             ↓
-Planificador verificable
+Verifiable planner
             ↓
-Explicación del LLM
+LLM explanation
             ↓
-Mapa y siguiente parada dentro de Buki
+Map and next stop inside Buki
             ↓
-Reparación cuando una parada cambia
+Repair when a stop changes
 ```
 
-### Responsabilidad de cada capa
+### Layer responsibilities
 
-- **Frontend:** captura intención, muestra el mapa, presenta el plan y permite corregirlo.
-- **Funciones server-side de Vercel:** protegen la clave del LLM, normalizan respuestas y coordinan la orquestación que no debe ejecutarse en el navegador.
-- **Proveedor de mapas:** entrega lugares, coordenadas, estado, horarios y rutas.
-- **Planificador determinista:** aplica tiempo, distancia, orden y disponibilidad.
-- **LLM:** interpreta lenguaje natural y explica decisiones sobre datos verificados.
-- **WebMCP:** expone acciones del producto a un agente mediante contratos estructurados.
+- **Frontend:** captures intent, displays the map, presents the plan, and allows corrections.
+- **Vercel server-side functions:** protect the LLM key, normalize responses, and coordinate orchestration that must not run in the browser.
+- **Map provider:** provides places, coordinates, status, opening information, and routes.
+- **Deterministic planner:** applies time, distance, ordering, and availability rules.
+- **LLM:** interprets natural language and explains decisions using verified data.
+- **WebMCP:** exposes product actions to an agent through structured contracts.
 
-El LLM nunca será la fuente de verdad para nombres de lugares, horarios o distancias.
+The LLM is never the source of truth for place names, opening information, or distances.
 
-## 4. Decisión inicial de proveedores
+## 4. Initial provider decision
 
-Para probar la promesa de “mapa real” se usará Google Maps Platform de punta a punta:
+Google Maps Platform will be used end to end to validate the “real map” promise:
 
-- Maps JavaScript API desde el frontend para el mapa incrustado.
-- Places API para lugares y detalles, usando la modalidad compatible con frontend cuando corresponda.
-- Directions Service de Maps JavaScript API para rutas caminando en el MVP frontend. La documentación actual lo marca como deprecado, así que la migración a Routes Library/API queda registrada como seguimiento técnico antes de escalar.
+- Maps JavaScript API from the frontend for the embedded map.
+- Places API for places and details, using the frontend-compatible mode where appropriate.
+- Maps JavaScript API Directions Service for walking routes in the frontend MVP. The current documentation marks it as deprecated, so migration to the Routes Library/API is recorded as technical follow-up before scaling.
 
-La clave de Google Maps para el navegador no se considera un secreto: se restringirá por dominio, APIs y cuotas. El LLM sí se invocará desde una función server-side de Vercel con `LLM_API_KEY`, que nunca se incluirá en variables `VITE_*` ni en el bundle del frontend. No se mantendrá un servidor FastAPI separado para el MVP.
+The browser Google Maps key is not treated as a secret: it will be restricted by domain, APIs, and quotas. The LLM will be called from a Vercel server-side function with `LLM_API_KEY`, which must never be included in `VITE_*` variables or the frontend bundle. A separate FastAPI server is not required for the MVP.
 
-Google ofrece campos de estado del negocio y horarios actuales en Places, y rutas con modo `WALK` en Routes. La implementación deberá revisar los campos solicitados, atribuciones y precios vigentes en la fecha de desarrollo:
+Google provides business status and current opening fields in Places, and `WALK` routes in Routes. The implementation must review requested fields, attributions, and current pricing at development time:
 
 - [Places API](https://developers.google.com/maps/documentation/places/web-service/reference/rest/v1/places)
 - [Routes API](https://developers.google.com/maps/documentation/routes/compute-route-over)
-- [Precios de Google Maps Platform](https://developers.google.com/maps/billing-and-pricing/pricing)
-- [Políticas y atribuciones de Places](https://developers.google.com/maps/documentation/places/web-service/policies)
+- [Google Maps Platform pricing](https://developers.google.com/maps/billing-and-pricing/pricing)
+- [Places policies and attributions](https://developers.google.com/maps/documentation/places/web-service/policies)
 
-### Controles de costo
+### Cost controls
 
-- Billing y presupuesto configurados antes de consumir datos reales.
-- Cuotas diarias y alertas.
-- Field masks para pedir únicamente campos necesarios.
-- Buscar candidatos primero y pedir detalles solo de los finalistas.
-- No consultar una API por cada tecla escrita.
-- Adaptador falso para tests.
-- No descargar fotos, reseñas ni datos avanzados en el primer recorrido.
+- Billing and a budget configured before consuming real data.
+- Daily quotas and alerts.
+- Field masks to request only the necessary fields.
+- Search for candidates first and request details only for finalists.
+- Never call an API for every keystroke.
+- A fake adapter for tests.
+- Do not download photos, reviews, or advanced data in the first route.
 
-Mapbox, OpenStreetMap y OSRM quedan como alternativas de evaluación posterior. No se implementarán varios proveedores en paralelo durante el MVP.
+Mapbox, OpenStreetMap, and OSRM remain candidates for later evaluation. Multiple providers will not be implemented in parallel during the MVP.
 
-## 5. Construcción por fases
+## 5. Phased construction
 
-### Fase 0 — Contrato del producto
+### Phase 0 — Product contract
 
-Estado: completada.
+Status: complete.
 
-Entregable: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md).
+Deliverable: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md).
 
-Se definieron:
+Defined:
 
-- Promesa del producto.
-- Usuario y problema.
-- Escenario de validación inicial en Santiago centro.
-- Recorrido feliz y evento de reparación.
-- Límites del MVP.
-- Criterios de éxito.
-- Prueba de campo.
-- Regla de parada.
+- Product promise.
+- User and problem.
+- Initial validation scenario in Santiago Center.
+- Happy path and repair event.
+- MVP boundaries.
+- Success criteria.
+- Field test.
+- Stop rule.
 
-No se continúa ampliando el alcance si la historia principal todavía no funciona.
+Scope does not expand while the main story is not working.
 
-### Fase 1 — Base reversible
+### Phase 1 — Reversible foundation
 
-Objetivo: crear la nueva aplicación sin romper los proyectos existentes.
+Objective: create the new application without breaking existing projects.
 
-Pasos:
+Steps:
 
-1. Inicializar Git en la raíz si todavía no existe.
-2. Crear un commit de línea base.
-3. Crear la rama `feature/buki-local-mcp`.
-4. Crear `buki/` con React, Vite y TypeScript.
-5. Crear funciones server-side de Vercel en `buki/api/` para salud y futura orquestación del LLM.
-6. Definir variables de entorno para el LLM server-side, Google Maps en frontend y límites.
-7. Definir un modo `mock` para desarrollo y pruebas.
-8. Verificar que el contrato y la documentación de Buki siguen siendo la referencia activa.
+1. Initialize Git at the repository root if it does not already exist.
+2. Create a baseline commit.
+3. Create the `feature/buki-local-mcp` branch.
+4. Create the React, Vite, and TypeScript application at the repository root.
+5. Create Vercel server-side functions in `api/` for health checks and future LLM orchestration.
+6. Define environment variables for the server-side LLM, frontend Google Maps, and limits.
+7. Define a `mock` mode for development and testing.
+8. Verify that Buki's contract and documentation remain the active reference.
 
-Salida de fase: Buki arranca localmente con un modo simulado; las funciones Vercel definen la frontera server-side para el LLM y Google Maps queda preparado para ejecutarse desde el frontend. No existe un servicio FastAPI separado.
+Phase output: Buki starts locally in simulated mode; Vercel functions define the LLM server-side boundary and Google Maps is prepared to run from the frontend. There is no separate FastAPI service.
 
-### Fase 2 — Experiencia móvil con datos simulados
+### Phase 2 — Mobile experience with simulated data
 
-Estado: completada en modo mock.
+Status: complete in mock mode.
 
-Objetivo: validar que la experiencia se entiende antes de pagar APIs.
+Objective: validate that the experience is understandable before paying for APIs.
 
-Pasos:
+Steps:
 
-1. Crear una pantalla mobile-first con el mapa ocupando la mayor parte del viewport.
-2. Añadir una caja de texto para la intención del usuario.
-3. Añadir ubicación actual simulada y selección manual de punto.
-4. Mostrar un panel inferior con el plan.
-5. Mostrar dos o tres paradas.
-6. Mostrar tiempo caminando entre cada parada.
-7. Mostrar la tarjeta “Siguiente parada”.
-8. Mostrar una parada cerrada y un reemplazo simulado.
-9. Crear una vista desktop con mapa y plan lado a lado.
+1. Create a mobile-first screen with the map occupying most of the viewport.
+2. Add a text box for user intent.
+3. Add simulated current location and manual point selection.
+4. Show a bottom panel with the plan.
+5. Show two or three stops.
+6. Show walking time between stops.
+7. Show the “Next stop” card.
+8. Show a closed stop and a simulated replacement.
+9. Create a desktop view with the map and plan side by side.
 
-Salida de fase: una persona puede entender el flujo completo sin conocer WebMCP ni la arquitectura.
+Phase output: a person can understand the complete flow without knowing WebMCP or the architecture.
 
-### Fase 3 — Recorrido real con Google Maps
+### Phase 3 — Real route with Google Maps
 
-Estado: implementada con fallback mock; la prueba contra Google queda pendiente de configurar una clave válida y restringida.
+Status: implemented with a mock fallback; Google validation is pending a valid restricted key.
 
-Objetivo: reemplazar datos sintéticos por datos geográficos reales en la ciudad seleccionada.
+Objective: replace synthetic data with real geographic data in the selected city.
 
-Pasos:
+Steps:
 
-1. Integrar el mapa incrustado de Google Maps.
-2. Solicitar geolocalización con consentimiento explícito.
-3. Consultar lugares cercanos según categorías extraídas.
-4. Obtener detalles solo para candidatos finalistas.
-5. Consultar estado de apertura y horarios disponibles.
-6. Calcular rutas reales caminando.
-7. Dibujar ruta, marcadores y posición actual dentro de Buki.
-8. Mostrar la fuente y hora de consulta cuando sea necesario.
-9. Manejar permisos denegados, resultados vacíos, límites y errores de API.
+1. Integrate the embedded Google Maps map.
+2. Request geolocation with explicit consent.
+3. Query nearby places using extracted categories.
+4. Request details only for finalist candidates.
+5. Query opening status and available hours.
+6. Calculate real walking routes.
+7. Draw the route, markers, and current position inside Buki.
+8. Show the source and query time when necessary.
+9. Handle denied permissions, empty results, quotas, and API errors.
 
-Salida de fase: desde un punto de la ciudad seleccionada se pueden mostrar lugares reales y una ruta caminable válida dentro de Buki.
+Phase output: from a point in the selected city, Buki can show real places and a valid walking route inside the application.
 
-Implementación actual:
+Current implementation:
 
-- `@googlemaps/js-api-loader` carga Maps JavaScript API solo cuando existe `VITE_GOOGLE_MAPS_API_KEY`.
-- `Place.searchNearby()` busca candidatos por comida, cultura y paseo al aire libre; `fetchFields()` obtiene detalles únicamente de los finalistas.
-- `Place.isOpen()` y el estado del negocio se muestran como abierto, cerrado o desconocido.
-- `DirectionsService` calcula una ruta `WALKING` con hasta tres paradas y dibuja el recorrido dentro de Buki.
-- Un botón solicita geolocalización del dispositivo con consentimiento del navegador; si se deniega, se conserva el punto manual.
-- Sin clave, sin permisos o ante un error de API, la experiencia vuelve a datos mock y explica el motivo en la interfaz.
-- La intención todavía no se interpreta con el LLM; eso pertenece a Fase 4. En esta fase el buscador real usa tres categorías base para validar la integración geográfica.
+- `@googlemaps/js-api-loader` loads the Maps JavaScript API only when `VITE_GOOGLE_MAPS_API_KEY` exists.
+- `Place.searchNearby()` searches candidates for food, culture, and outdoor activity; `fetchFields()` requests details only for finalists.
+- `Place.isOpen()` and business status are shown as open, closed, or unknown.
+- `DirectionsService` calculates a `WALKING` route with up to three stops and draws it inside Buki.
+- A button requests device geolocation with browser consent; if denied, the manual point is kept.
+- Without a key, permission, or after an API error, the experience falls back to mock data and explains the reason in the interface.
+- Intent is not yet interpreted by the LLM; that belongs to Phase 4. In this phase, real search uses three base categories to validate the geographic integration.
 
-### Fase 4 — Lenguaje natural y planificación
+### Phase 4 — Natural language and planning
 
-Objetivo: convertir una frase libre en un plan factible.
+Objective: turn a free-form sentence into a feasible plan.
 
-Pasos:
+Steps:
 
-1. Extraer a una estructura `TripRequest`:
-   - origen;
-   - hora de inicio;
-   - tiempo disponible;
-   - intereses;
-   - presupuesto opcional;
-   - caminata máxima por tramo;
-   - ritmo o cantidad de paradas.
-2. Pedir aclaración solo cuando falte un dato imprescindible.
-3. Consultar candidatos usando esas restricciones.
-4. Calcular rutas antes de ordenar las paradas.
-5. Aplicar reglas deterministas de tiempo y distancia.
-6. Pedir al LLM una explicación breve basada en el plan validado.
-7. Rechazar nombres o datos que no provengan de los proveedores.
-8. Mostrar advertencias cuando un horario no pueda verificarse.
+1. Extract a `TripRequest` structure:
+   - origin;
+   - start time;
+   - available time;
+   - interests;
+   - optional budget;
+   - maximum walking distance per leg;
+   - pace or number of stops.
+2. Ask for clarification only when an essential value is missing.
+3. Query candidates using those constraints.
+4. Calculate routes before ordering stops.
+5. Apply deterministic time and distance rules.
+6. Ask the LLM for a short explanation based on the validated plan.
+7. Reject names or data that do not come from providers.
+8. Show warnings when hours cannot be verified.
 
-Salida de fase: el escenario de validación se inicia con lenguaje natural y no con un formulario largo.
+Phase output: the validation scenario starts with natural language instead of a long form.
 
-### Fase 5 — WebMCP mínimo
+### Phase 5 — Minimal WebMCP
 
-Estado: base implementada en paralelo para cumplir el challenge; pendiente conectar la planificación de lenguaje natural de Fase 4.
+Status: foundation implemented in parallel for the challenge; connecting natural-language planning from Phase 4 is pending.
 
-Objetivo: permitir que un agente use las capacidades reales de Buki.
+Objective: allow an agent to use Buki's real capabilities.
 
-Herramientas registradas actualmente:
+Currently registered tools:
 
 - `search_nearby_places`;
 - `get_place_status`;
@@ -244,111 +244,108 @@ Herramientas registradas actualmente:
 - `advance_to_next_stop`;
 - `get_buki_context`.
 
-Pasos:
+Steps:
 
-1. Definir descripciones y esquemas de entrada.
-2. Marcar las operaciones de lectura como read-only.
-3. Hacer que las propuestas sean visibles antes de aplicarlas.
-4. Registrar cada invocación y resultado de forma resumida.
-5. Mantener controles manuales equivalentes.
-6. Probar errores, entradas incompletas y ausencia de WebMCP.
+1. Define descriptions and input schemas.
+2. Mark read operations as read-only.
+3. Make proposals visible before applying them.
+4. Record each invocation and result in summarized form.
+5. Keep equivalent manual controls.
+6. Test errors, incomplete inputs, and the absence of WebMCP.
 
-La página incluye un inspector visible que muestra las once herramientas, sus
-esquemas, si fueron registradas por `document.modelContext` y el resumen de las
-últimas invocaciones. Cuando el navegador no ofrece WebMCP, el inspector sigue
-mostrando la definición local y la experiencia manual permanece operativa.
+The page includes a visible inspector showing the eleven tools, their schemas, whether they were registered by `document.modelContext`, and a summary of recent calls. When the browser does not offer WebMCP, the inspector still shows local definitions and the manual experience remains operational.
 
-No se implementará todavía un catálogo grande de tools. La ampliación del alcance de WebMCP queda pendiente de descubrimiento después de validar este flujo.
+A large tool catalog will not be implemented yet. Expanding WebMCP remains a discovery task after this flow is validated.
 
-### Fase 6 — Reparación de una parada
+### Phase 6 — Stop repair
 
-Objetivo: demostrar adaptación sin rehacer todo el itinerario.
+Objective: demonstrate adaptation without rebuilding the entire itinerary.
 
-Pasos:
+Steps:
 
-1. Permitir marcar una parada como cerrada o no disponible.
-2. Identificar qué tramos quedan afectados.
-3. Buscar alternativas con la misma intención.
-4. Recalcular tiempos y distancias.
-5. Conservar origen, tiempo disponible y caminata máxima.
-6. Mostrar comparación antes/después.
-7. Explicar por qué se eligió el reemplazo.
-8. Permitir aceptar o deshacer la reparación.
-9. Mostrar estado “desconocido” cuando no exista evidencia suficiente.
+1. Allow a stop to be marked closed or unavailable.
+2. Identify affected legs.
+3. Search for alternatives with the same intent.
+4. Recalculate times and distances.
+5. Preserve origin, available time, and maximum walking distance.
+6. Show a before-and-after comparison.
+7. Explain why the replacement was selected.
+8. Allow the person to accept or undo the repair.
+9. Show an “unknown” status when there is not enough evidence.
 
-Noticias y fuentes externas se evaluarán después. Una noticia no debe cambiar el plan automáticamente sin indicar fuente, fecha y nivel de confianza.
+News and external sources will be evaluated later. A news item must not change the plan automatically without showing its source, date, and confidence level.
 
-### Fase 7 — Verificación, móvil y despliegue
+### Phase 7 — Verification, mobile, and deployment
 
-Objetivo: demostrar el producto en un teléfono real, inicialmente en Santiago.
+Objective: demonstrate the product on a real phone, initially in Santiago.
 
-Pasos:
+Steps:
 
-1. Pruebas unitarias del planificador.
-2. Pruebas E2E en escritorio.
-3. Pruebas E2E en viewport móvil aproximado de 390×844.
-4. Prueba con WebMCP disponible.
-5. Prueba manual sin WebMCP.
-6. Prueba de geolocalización con HTTPS.
-7. Prueba de rutas en el centro de Santiago.
-8. Verificación de atribuciones, privacidad y claves restringidas.
-9. Configuración de cuotas y alertas.
-10. Despliegue público con HTTPS.
-11. Prueba de campo caminando con un teléfono real.
+1. Unit tests for the planner.
+2. Desktop E2E tests.
+3. E2E tests in an approximately 390×844 mobile viewport.
+4. Test with WebMCP available.
+5. Manual test without WebMCP.
+6. Geolocation test over HTTPS.
+7. Route test in Santiago Center.
+8. Verify attributions, privacy, and restricted keys.
+9. Configure quotas and alerts.
+10. Public HTTPS deployment.
+11. Field test while walking with a real phone.
 
-El despliegue se hace después de que el recorrido local y la experiencia móvil pasen.
+Deployment happens after the local route and mobile experience pass.
 
-## 6. Prueba definitiva del MVP
+## 6. Definitive MVP test
 
-Una persona abre Buki desde su celular en el centro de Santiago y escribe:
+A person opens Buki on their phone in Santiago Center and writes:
 
-> “Tengo toda la tarde, quiero comer algo típico, conocer dos lugares interesantes y caminar no más de veinte minutos entre cada parada. Dame un plan que funcione hoy.”
+> “I have the whole afternoon, want to eat something local, visit two interesting places, and walk no more than twenty minutes between each stop. Give me a plan that works today.”
 
-La prueba pasa si:
+The test passes if:
 
-1. Buki entiende la intención sin explicación externa.
-2. El usuario puede confirmar su ubicación.
-3. Aparecen dos o tres lugares reales.
-4. El mapa incrustado muestra el circuito completo.
-5. El plan respeta el tiempo disponible y la caminata máxima.
-6. Se muestran horarios o estados con incertidumbre explícita.
-7. El usuario identifica cuál es la siguiente parada.
-8. Puede seguir el mapa sin salir de Buki.
-9. Una parada cerrada puede reemplazarse conservando las restricciones.
-10. La experiencia funciona tanto manualmente como mediante WebMCP.
+1. Buki understands the intent without outside explanation.
+2. The user can confirm their location.
+3. Two or three real places appear.
+4. The embedded map shows the complete route.
+5. The plan respects available time and maximum walking distance.
+6. Hours or statuses are shown with explicit uncertainty.
+7. The user can identify the next stop.
+8. They can follow the map without leaving Buki.
+9. A closed stop can be replaced while preserving constraints.
+10. The experience works both manually and through WebMCP.
 
-## 7. Métricas de la prueba de campo
+## 7. Field-test metrics
 
-- Tiempo desde abrir la aplicación hasta obtener el primer plan.
-- Tiempo hasta entender la siguiente acción.
-- Porcentaje de lugares correctamente identificados.
-- Diferencia entre tiempo caminando estimado y observado.
-- Número de correcciones necesarias.
-- Porcentaje de reparaciones aceptadas.
-- Errores de API o geolocalización.
-- Consumo de API por sesión.
-- Si la persona volvería a usar Buki para decidir qué hacer ahora.
+- Time from opening the application to receiving the first plan.
+- Time until the user understands the next action.
+- Percentage of correctly identified places.
+- Difference between estimated and observed walking time.
+- Number of corrections required.
+- Percentage of accepted repairs.
+- API or geolocation errors.
+- API usage per session.
+- Whether the person would use Buki again to decide what to do now.
 
-## 8. Regla de parada y decisiones pendientes
+## 8. Stop rule and pending decisions
 
-La primera versión se detiene después de una historia completa en Santiago centro. Esto valida el producto en una ciudad concreta; no convierte a Santiago en una restricción geográfica permanente.
+The first version stops after a complete story in Santiago Center. This validates the product in one concrete city; it does not make Santiago a permanent geographic restriction.
 
-No se agregan antes de esa validación:
+Do not add before that validation:
 
-- reservas o pagos;
-- vuelos, hoteles o traslados;
-- planificación que combine varias ciudades o varios días;
-- navegación giro a giro propia;
-- rastreo automático de noticias;
-- segundo proveedor de mapas;
-- catálogo ampliado de WebMCP tools;
-- cuentas, perfiles o red social.
+- reservations or payments;
+- flights, hotels, or transfers;
+- planning across multiple cities or days;
+- custom turn-by-turn navigation;
+- automatic news tracking;
+- a second map provider;
+- an expanded WebMCP tool catalog;
+- accounts, profiles, or a social network.
 
-Después de la prueba de campo se decidirá, con evidencia de uso, si Buki necesita:
+After the field test, usage evidence will determine whether Buki needs to:
 
-- ampliar WebMCP;
-- incorporar fuentes de noticias o eventos;
-- ampliar la validación a otras ciudades;
-- añadir proveedores alternativos;
-- incorporar funciones de reserva;
-- mantener Google Maps o evaluar Mapbox/OSM.
+- expand WebMCP;
+- add news or event sources;
+- expand validation to other cities;
+- add alternative providers;
+- add booking features;
+- keep Google Maps or evaluate Mapbox/OSM.

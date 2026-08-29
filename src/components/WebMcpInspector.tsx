@@ -13,22 +13,22 @@ interface WebMcpInspectorProps {
 }
 
 const STATUS_LABELS: Record<WebMcpStatus, string> = {
-  checking: 'Comprobando compatibilidad…',
-  active: 'WebMCP activo en esta página',
-  partial: 'WebMCP parcialmente registrado',
-  unavailable: 'WebMCP no disponible en este navegador',
-  error: 'No se pudieron registrar las herramientas',
+  checking: 'Checking compatibility…',
+  active: 'WebMCP is active on this page',
+  partial: 'WebMCP is partially registered',
+  unavailable: 'WebMCP is unavailable in this browser',
+  error: 'The tools could not be registered',
 }
 
 function formatTime(timestamp: string) {
-  return new Date(timestamp).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function schemaFields(schema: WebMcpToolDefinition['inputSchema']) {
   const properties = schema.properties
-  if (!properties || typeof properties !== 'object') return 'Sin parámetros'
+  if (!properties || typeof properties !== 'object') return 'No parameters'
   const fields = Object.keys(properties)
-  return fields.length ? fields.map((field) => ` ${field}`).join(' ·') : 'Sin parámetros'
+  return fields.length ? fields.map((field) => ` ${field}`).join(' ·') : 'No parameters'
 }
 
 export function WebMcpInspector({
@@ -55,8 +55,8 @@ export function WebMcpInspector({
       >
         <header className="webmcp-modal-header">
           <div>
-            <p className="section-kicker">Conexión de agente</p>
-            <h2 id="webmcp-inspector-title">Inspector WebMCP</h2>
+            <p className="section-kicker">Agent connection</p>
+            <h2 id="webmcp-inspector-title">WebMCP Inspector</h2>
             <p>{STATUS_LABELS[status]}</p>
           </div>
           <button className="webmcp-close" type="button" onClick={onClose} aria-label="Cerrar inspector">×</button>
@@ -64,8 +64,8 @@ export function WebMcpInspector({
 
         <div className="webmcp-summary">
           <span className={`webmcp-status-dot is-${status}`} />
-          <strong>{registeredCount} / {definitions.length} registradas</strong>
-          <span>{status === 'active' ? 'Disponibles para un agente compatible' : 'La vista permanece disponible para inspección'}</span>
+          <strong>{registeredCount} / {definitions.length} registered</strong>
+          <span>{status === 'active' ? 'Available to a compatible agent' : 'This view remains available for inspection'}</span>
         </div>
 
         <div className="webmcp-tool-list">
@@ -76,14 +76,14 @@ export function WebMcpInspector({
                 <div className="webmcp-tool-topline">
                   <code>{tool.name}</code>
                   <span className={`webmcp-tool-state ${registered ? 'is-registered' : ''}`}>
-                    {registered ? 'Registrada' : 'Definida'}
+                    {registered ? 'Registered' : 'Defined'}
                   </span>
                 </div>
                 <h3>{tool.title}</h3>
                 <p>{tool.description}</p>
                 <div className="webmcp-tool-meta">
-                  <span>Parámetros:{schemaFields(tool.inputSchema)}</span>
-                  {tool.annotations?.readOnlyHint && <span className="webmcp-readonly">Solo lectura</span>}
+                  <span>Parameters:{schemaFields(tool.inputSchema)}</span>
+                  {tool.annotations?.readOnlyHint && <span className="webmcp-readonly">Read-only</span>}
                 </div>
               </article>
             )
@@ -93,10 +93,10 @@ export function WebMcpInspector({
         <section className="webmcp-call-log" aria-labelledby="webmcp-call-log-title">
           <div className="webmcp-log-header">
             <div>
-              <p className="section-kicker">Actividad</p>
-              <h3 id="webmcp-call-log-title">Últimas invocaciones</h3>
+              <p className="section-kicker">Activity</p>
+              <h3 id="webmcp-call-log-title">Recent calls</h3>
             </div>
-            <span>{calls.length ? `${calls.length} registradas` : 'Sin invocaciones'}</span>
+            <span>{calls.length ? `${calls.length} recorded` : 'No calls yet'}</span>
           </div>
           {calls.length ? (
             <div className="webmcp-call-list">
@@ -110,13 +110,13 @@ export function WebMcpInspector({
               ))}
             </div>
           ) : (
-            <p className="webmcp-empty-log">Cuando un agente use una herramienta, aparecerá aquí el resultado resumido.</p>
+            <p className="webmcp-empty-log">When an agent uses a tool, its summarized result will appear here.</p>
           )}
         </section>
 
         <footer className="webmcp-modal-footer">
-          <span>Las acciones que cambian el plan quedan visibles en Buki.</span>
-          <button className="dark-button webmcp-done-button" type="button" onClick={onClose}>Listo</button>
+          <span>Actions that change the plan remain visible in Buki.</span>
+          <button className="dark-button webmcp-done-button" type="button" onClick={onClose}>Done</button>
         </footer>
       </section>
     </div>
