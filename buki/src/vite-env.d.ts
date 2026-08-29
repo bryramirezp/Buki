@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_BUKI_MODE?: 'mock' | 'real'
   readonly VITE_BUKI_API_URL?: string
+  readonly VITE_GOOGLE_MAPS_API_KEY?: string
 }
 
 interface ImportMeta {

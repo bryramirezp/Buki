@@ -112,7 +112,7 @@ Reparación cuando una parada cambia
 
 Google Maps/Places/Routes sería la fuente inicial para mapa, lugares y rutas. El LLM no será la fuente de verdad geográfica: interpretará la petición y redactará la explicación sobre datos devueltos por las APIs.
 
-La ciudad es un parámetro de operación, no una limitación conceptual del producto. La cobertura efectiva, los campos disponibles y la calidad de los datos dependerán de Google Maps en cada ubicación. Santiago se usa como escenario de validación y prueba de campo del MVP.
+El mapa y las peticiones compatibles con frontend de Google Maps podrán ejecutarse desde el navegador usando una clave restringida por dominio, APIs y cuotas. La clave del LLM se mantendrá exclusivamente en una función server-side de Vercel; no se necesita un servidor FastAPI separado. La ciudad es un parámetro de operación, no una limitación conceptual del producto. La cobertura efectiva, los campos disponibles y la calidad de los datos dependerán de Google Maps en cada ubicación. Santiago se usa como escenario de validación y prueba de campo del MVP.
 
 WebMCP será una capa de interacción para el agente, no el argumento de valor para la persona. Las herramientas iniciales serán conceptualmente:
 

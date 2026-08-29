@@ -22,7 +22,7 @@ No se copiarán archivos completos entre proyectos.
 
 - Modelo conceptual de lugares e itinerarios.
 - Descubrimiento geográfico como punto de partida.
-- FastAPI como backend de referencia.
+- FastAPI como referencia histórica de arquitectura, no como runtime de Buki.
 - Abstracción de proveedor LLM.
 - Prompt y validación de JSON estructurado.
 - Pruebas multiciudad como metodología.
@@ -42,7 +42,7 @@ No se copiarán archivos completos entre proyectos.
 - Selectores de mood y duración, para pasar a restricciones interpretadas.
 - Línea visual entre coordenadas, para pasar a rutas caminando reales.
 - Layout de escritorio, para convertirlo en experiencia mobile-first.
-- Llamadas LLM desde el navegador, para llevar secretos y orquestación al backend.
+- Llamadas LLM desde el navegador, para llevar secretos y orquestación a funciones server-side de Vercel.
 - El contexto empresarial anterior, para enfocarlo en una persona explorando una ciudad; Santiago será la primera validación de campo.
 
 ### Se mantiene fuera del producto hasta validar
@@ -75,7 +75,7 @@ Reparación cuando una parada cambia
 ### Responsabilidad de cada capa
 
 - **Frontend:** captura intención, muestra el mapa, presenta el plan y permite corregirlo.
-- **Backend:** protege claves, consulta proveedores, normaliza respuestas y coordina el plan.
+- **Funciones server-side de Vercel:** protegen la clave del LLM, normalizan respuestas y coordinan la orquestación que no debe ejecutarse en el navegador.
 - **Proveedor de mapas:** entrega lugares, coordenadas, estado, horarios y rutas.
 - **Planificador determinista:** aplica tiempo, distancia, orden y disponibilidad.
 - **LLM:** interpreta lenguaje natural y explica decisiones sobre datos verificados.
@@ -87,9 +87,11 @@ El LLM nunca será la fuente de verdad para nombres de lugares, horarios o dista
 
 Para probar la promesa de “mapa real” se usará Google Maps Platform de punta a punta:
 
-- Maps JavaScript API para el mapa incrustado.
-- Places API para lugares y detalles.
-- Routes API para rutas caminando.
+- Maps JavaScript API desde el frontend para el mapa incrustado.
+- Places API para lugares y detalles, usando la modalidad compatible con frontend cuando corresponda.
+- Routes API para rutas caminando, usando la modalidad compatible con frontend cuando corresponda.
+
+La clave de Google Maps para el navegador no se considera un secreto: se restringirá por dominio, APIs y cuotas. El LLM sí se invocará desde una función server-side de Vercel con `LLM_API_KEY`, que nunca se incluirá en variables `VITE_*` ni en el bundle del frontend. No se mantendrá un servidor FastAPI separado para el MVP.
 
 Google ofrece campos de estado del negocio y horarios actuales en Places, y rutas con modo `WALK` en Routes. La implementación deberá revisar los campos solicitados, atribuciones y precios vigentes en la fecha de desarrollo:
 
@@ -141,12 +143,12 @@ Pasos:
 2. Crear un commit de línea base.
 3. Crear la rama `feature/buki-local-mcp`.
 4. Crear `buki/` con React, Vite y TypeScript.
-5. Crear un backend FastAPI separado.
-6. Definir variables de entorno para claves y límites.
+5. Crear funciones server-side de Vercel en `buki/api/` para salud y futura orquestación del LLM.
+6. Definir variables de entorno para el LLM server-side, Google Maps en frontend y límites.
 7. Definir un modo `mock` para desarrollo y pruebas.
 8. Verificar que el contrato y la documentación de Buki siguen siendo la referencia activa.
 
-Salida de fase: Buki arranca localmente con un modo simulado y el prototipo anterior ya no forma parte del árbol activo.
+Salida de fase: Buki arranca localmente con un modo simulado; las funciones Vercel definen la frontera server-side para el LLM y Google Maps queda preparado para ejecutarse desde el frontend. No existe un servicio FastAPI separado.
 
 ### Fase 2 — Experiencia móvil con datos simulados
 

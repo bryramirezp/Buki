@@ -7,9 +7,7 @@ buki/.vite/
 buki/.env
 buki/.env.*
 !buki/.env.example
-buki/backend/.venv/
-buki/backend/__pycache__/
-buki/backend/.pytest_cache/
+buki/.vercel/
 __pycache__/
 *.pyc
 *.tsbuildinfo

@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 
-type BackendState = 'checking' | 'online' | 'offline'
+type BackendState = 'mock' | 'checking' | 'online' | 'offline'
 
 const mode = import.meta.env.VITE_BUKI_MODE ?? 'mock'
-const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? 'http://127.0.0.1:8000'
+const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
+const isMock = mode === 'mock'
 
 function App() {
-  const [backendState, setBackendState] = useState<BackendState>('checking')
+  const [backendState, setBackendState] = useState<BackendState>(isMock ? 'mock' : 'checking')
 
   useEffect(() => {
+    if (isMock) return
+
     const controller = new AbortController()
 
     fetch(`${apiUrl}/api/health`, { signal: controller.signal })
@@ -23,6 +26,13 @@ function App() {
     return () => controller.abort()
   }, [])
 
+  const backendLabel = {
+    mock: 'mock local',
+    checking: 'comprobando…',
+    online: 'conectado',
+    offline: 'pendiente',
+  }[backendState]
+
   return (
     <main className="shell">
       <section className="hero" aria-labelledby="page-title">
@@ -34,7 +44,7 @@ function App() {
         <div className="status-row" aria-label="Estado de la aplicación">
           <span className="status-chip">Modo {mode}</span>
           <span className={`status-chip status-${backendState}`}>
-            Backend {backendState === 'checking' ? 'comprobando…' : backendState === 'online' ? 'conectado' : 'pendiente'}
+            Server-side {backendLabel}
           </span>
         </div>
       </section>
@@ -45,8 +55,8 @@ function App() {
           <p className="card-kicker">Punto de partida</p>
           <h2 id="setup-title">La base de Buki está lista</h2>
           <p>
-            El frontend y el backend ya están separados. El siguiente paso es construir el recorrido
-            completo con datos simulados antes de conectar Google Maps.
+            El frontend y las funciones server-side ya están separados. El siguiente paso es construir
+            el recorrido completo con datos simulados antes de conectar Google Maps.
           </p>
           <div className="next-step">Próxima fase: experiencia móvil con datos simulados.</div>
         </div>
