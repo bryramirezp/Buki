@@ -59,7 +59,7 @@ export function WebMcpInspector({
             <h2 id="webmcp-inspector-title">WebMCP Inspector</h2>
             <p>{STATUS_LABELS[status]}</p>
           </div>
-          <button className="webmcp-close" type="button" onClick={onClose} aria-label="Cerrar inspector">×</button>
+          <button className="webmcp-close" type="button" onClick={onClose} aria-label="Close inspector">×</button>
         </header>
 
         <div className="webmcp-summary">

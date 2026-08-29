@@ -1,5 +1,5 @@
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
-import type { GeoPoint, PlaceAvailability, PlaceKind, TripLocation, TripPlan, TripPlace, TripStop, WalkingSegment } from '../types'
+import type { GeoPoint, PlaceAvailability, PlaceKind, TripLocation, TripPlan, TripPlace, TripRequest, TripStop, WalkingSegment } from '../types'
 
 export interface GoogleMapsController {
   map: google.maps.Map
@@ -109,14 +109,14 @@ export function updateGoogleMapMarkers(
   })
 }
 
-async function findNearbyByKind(origin: GeoPoint, kind: PlaceKind): Promise<NearbyCandidate[]> {
+async function findNearbyByKind(origin: GeoPoint, kind: PlaceKind, maxResultCount: number): Promise<NearbyCandidate[]> {
   const { Place } = await importLibrary('places')
   const { SearchNearbyRankPreference } = await importLibrary('places')
   const response = await Place.searchNearby({
     fields: ['id', 'displayName', 'formattedAddress', 'location', 'googleMapsURI'],
     includedPrimaryTypes: CATEGORY_TYPES[kind],
     locationRestriction: { center: origin, radius: 1800 },
-    maxResultCount: 3,
+    maxResultCount,
     rankPreference: SearchNearbyRankPreference.POPULARITY,
     language: 'en',
   })
@@ -182,21 +182,32 @@ async function fetchPlaceDetails(candidate: NearbyCandidate): Promise<TripPlace 
   }
 }
 
-async function searchFinalPlaces(origin: GeoPoint): Promise<TripPlace[]> {
-  const kinds: PlaceKind[] = ['food', 'culture', 'view']
+async function searchFinalPlaces(origin: GeoPoint, request?: TripRequest): Promise<TripPlace[]> {
+  const kinds = request?.interests.length ? request.interests : ['food', 'culture', 'view'] as PlaceKind[]
+  const desiredStops = request?.stopCount ?? 3
   const candidateGroups = await Promise.all(
     kinds.map(async (kind) => {
       try {
-        return await findNearbyByKind(origin, kind)
+        return await findNearbyByKind(origin, kind, desiredStops)
       } catch {
         return []
       }
     }),
   )
 
-  const finalists = candidateGroups
-    .map((candidates) => candidates[0])
-    .filter((candidate): candidate is NearbyCandidate => Boolean(candidate))
+  const finalists: NearbyCandidate[] = []
+  for (let candidateIndex = 0; finalists.length < desiredStops; candidateIndex += 1) {
+    let addedCandidate = false
+    for (const candidates of candidateGroups) {
+      const candidate = candidates[candidateIndex]
+      if (candidate) {
+        finalists.push(candidate)
+        addedCandidate = true
+      }
+      if (finalists.length >= desiredStops) break
+    }
+    if (!addedCandidate) break
+  }
 
   const places = await Promise.all(finalists.map(fetchPlaceDetails))
   return places.filter((place): place is TripPlace => Boolean(place))
@@ -257,18 +268,30 @@ async function drawWalkingRoute(
   }
 }
 
+function assertRouteFitsRequest(route: RouteResult, request?: TripRequest) {
+  if (!request) return
+  if (route.segments.some((segment) => segment.minutes > request.maxWalkMinutes)) {
+    throw new Error('GOOGLE_MAPS_ROUTE_EXCEEDS_WALK_LIMIT')
+  }
+  if (route.segments.reduce((total, segment) => total + segment.minutes, 0) > request.availableMinutes) {
+    throw new Error('GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT')
+  }
+}
+
 export async function buildGoogleTripPlan(
   controller: GoogleMapsController,
   origin: TripLocation,
   title: string,
   city: string,
+  request?: TripRequest,
 ): Promise<TripPlan> {
   if (!origin.coordinates) throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
 
-  const places = await searchFinalPlaces(origin.coordinates)
+  const places = await searchFinalPlaces(origin.coordinates, request)
   if (places.length < 2) throw new Error('GOOGLE_MAPS_NOT_ENOUGH_PLACES')
 
   const route = await drawWalkingRoute(controller, origin.coordinates, places)
+  assertRouteFitsRequest(route, request)
   const stops: TripStop[] = places.map((place, index) => ({
     id: place.id,
     sequence: index + 1,

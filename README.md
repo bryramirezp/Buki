@@ -27,7 +27,7 @@ Copy `.env.example` to `.env` and fill in the values you need. Never commit `.en
 
 ## Current state
 
-Phase 3 is implemented with optional Google Maps integration and a WebMCP foundation. Buki has a mobile-first experience with a mock fallback, consent-based geolocation, real place search, opening-status checks, walking routes, and a visible inspector for 11 tools. The next step is validating Maps with a restricted key and completing the LLM adapter.
+Phase 4 has its first local slice implemented on top of the Phase 3 Google Maps integration and WebMCP foundation. Buki interprets natural-language intent through a server-side LLM adapter, then uses Google Maps for real places and walking routes, with a mock fallback and a visible inspector for 11 tools.
 
 ## Configuration
 

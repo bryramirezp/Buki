@@ -198,7 +198,9 @@ Current implementation:
 - `Route.computeRoutes()` calculates a `WALKING` route with up to three stops and draws it inside Buki using the current Routes Library.
 - A button requests device geolocation with browser consent; if denied, the manual point is kept.
 - Without a key, permission, or after an API error, the experience falls back to mock data and explains the reason in the interface.
-- Intent is not yet interpreted by the LLM; that belongs to Phase 4. In this phase, real search uses three base categories to validate the geographic integration.
+- The manual intent form sends natural-language requests to the Vercel function when `VITE_BUKI_MODE=real`.
+- The server-side LLM adapter returns structured interests, time, walking, and stop-count constraints without inventing geographic facts.
+- Google Maps uses those constraints to search real categories, calculate the route, and reject routes that exceed the requested limits.
 
 ### Phase 4 — Natural language and planning
 
@@ -222,11 +224,11 @@ Steps:
 7. Reject names or data that do not come from providers.
 8. Show warnings when hours cannot be verified.
 
-Phase output: the validation scenario starts with natural language instead of a long form.
+Phase output: the first local slice is implemented; the validation scenario can interpret natural language and use it to build a real Maps route. Richer candidate ranking and explanation generation remain follow-up work.
 
 ### Phase 5 — Minimal WebMCP
 
-Status: foundation implemented in parallel for the challenge; connecting natural-language planning from Phase 4 is pending.
+Status: foundation implemented in parallel for the challenge; manual natural-language planning is now connected to the server-side adapter.
 
 Objective: allow an agent to use Buki's real capabilities.
 

@@ -50,6 +50,13 @@ export interface GeoPoint {
   lng: number
 }
 
+export interface TripRequest {
+  interests: PlaceKind[]
+  availableMinutes: number
+  maxWalkMinutes: number
+  stopCount: 2 | 3
+}
+
 export interface TripLocation {
   id: string
   name: string

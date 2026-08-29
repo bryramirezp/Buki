@@ -7,7 +7,7 @@ import {
   moveGoogleMap,
   updateGoogleMapMarkers,
 } from './integrations/googleMaps'
-import type { TripLocation, TripPlace, TripStop } from './types'
+import type { TripLocation, TripPlace, TripRequest, TripStop } from './types'
 import { useWebMcp } from './hooks/useWebMcp'
 import type { BukiWebMcpActions } from './integrations/webmcp'
 import {
@@ -21,6 +21,14 @@ type ServerState = 'mock' | 'checking' | 'online' | 'offline'
 type MapState = 'mock' | 'loading' | 'ready' | 'error'
 type LocationState = 'manual' | 'simulated' | 'requesting' | 'granted' | 'denied' | 'unsupported'
 type RealPlanState = 'idle' | 'loading' | 'ready' | 'error'
+
+interface PlannerResponse {
+  mode: 'llm' | 'mock'
+  intent: string
+  title: string
+  explanation: string
+  request: TripRequest
+}
 
 const mode = import.meta.env.VITE_BUKI_MODE ?? 'mock'
 const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
@@ -48,11 +56,37 @@ function getGoogleErrorMessage(error: unknown) {
   if (error instanceof Error) {
     if (error.message === 'GOOGLE_MAPS_KEY_MISSING') return 'Configure a Google Maps key to search real places.'
     if (error.message === 'GOOGLE_MAPS_NOT_ENOUGH_PLACES') return 'Google Maps did not find enough nearby places to build the route.'
+    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_WALK_LIMIT') return 'The available places do not fit your maximum walking time per leg.'
+    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT') return 'The available places do not fit your available time.'
     if (error.message.includes('REQUEST_DENIED') || error.message.includes('ApiNotActivated')) {
       return 'Google Maps rejected the request. Check enabled APIs, restrictions, and key billing.'
     }
   }
   return 'We could not query Google Maps right now. The simulated route is still available.'
+}
+
+function getPlannerErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.startsWith('GOOGLE_MAPS_')) return getGoogleErrorMessage(error)
+  if (error instanceof Error && error.message) return error.message
+  return 'We could not interpret that request. Please try again.'
+}
+
+function isPlannerResponse(value: unknown): value is PlannerResponse {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  const request = candidate.request
+  if (!request || typeof request !== 'object') return false
+  const parsedRequest = request as Record<string, unknown>
+  return (
+    (candidate.mode === 'llm' || candidate.mode === 'mock') &&
+    typeof candidate.intent === 'string' &&
+    typeof candidate.title === 'string' &&
+    typeof candidate.explanation === 'string' &&
+    Array.isArray(parsedRequest.interests) &&
+    typeof parsedRequest.availableMinutes === 'number' &&
+    typeof parsedRequest.maxWalkMinutes === 'number' &&
+    (parsedRequest.stopCount === 2 || parsedRequest.stopCount === 3)
+  )
 }
 
 function App() {
@@ -63,6 +97,8 @@ function App() {
   const [mapState, setMapState] = useState<MapState>(mapsApiKey ? 'loading' : 'mock')
   const [locationState, setLocationState] = useState<LocationState>('manual')
   const [realPlanState, setRealPlanState] = useState<RealPlanState>('idle')
+  const [plannerRequest, setPlannerRequest] = useState<TripRequest | null>(null)
+  const [isPlanning, setIsPlanning] = useState(false)
   const [intent, setIntent] = useState(DEFAULT_INTENT)
   const [selectedLocationId, setSelectedLocationId] = useState('plaza-armas')
   const [origin, setOrigin] = useState<TripLocation>(() => getMockItinerary().origin)
@@ -225,7 +261,7 @@ function App() {
     )
   }
 
-  async function fetchRealPlan() {
+  async function fetchRealPlan(request = plannerRequest ?? undefined, title = plan.title) {
     if (!origin.coordinates) {
       throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
     }
@@ -233,8 +269,9 @@ function App() {
     return buildGoogleTripPlan(
       controller,
       origin,
-      'A route to explore now',
+      title,
       origin.detail,
+      request,
     )
   }
 
@@ -265,11 +302,67 @@ function App() {
     }
   }
 
-  function submitIntent(event: FormEvent<HTMLFormElement>) {
+  async function requestLlmPlan(nextIntent: string): Promise<PlannerResponse> {
+    const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent: nextIntent }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message = payload && typeof payload === 'object' && typeof payload.error === 'string'
+        ? payload.error
+        : 'The planning function is unavailable.'
+      throw new Error(message)
+    }
+    if (!isPlannerResponse(payload)) throw new Error('The planning function returned an invalid response.')
+    return payload
+  }
+
+  async function submitIntent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setNotice(plan.source === 'google-maps'
-      ? 'Intent updated. Find real places again to apply the new criteria.'
-      : 'Intent saved. This plan still uses simulated data.')
+    const nextIntent = intent.trim()
+    if (!nextIntent) {
+      setNotice('Tell Buki what you would like to do.')
+      return
+    }
+    if (isMock) {
+      setNotice(plan.source === 'google-maps'
+        ? 'Intent updated. Find real places again to apply the new criteria.'
+        : 'Intent saved. This plan still uses simulated data.')
+      return
+    }
+
+    setServerState('checking')
+    setIsPlanning(true)
+    setNotice('Interpreting your request…')
+    try {
+      const planner = await requestLlmPlan(nextIntent)
+      setPlannerRequest(planner.request)
+      setIntent(planner.intent)
+
+      if (!mapsApiKey || !origin.coordinates) {
+        setPlan((currentPlan) => ({ ...currentPlan, title: planner.title }))
+        setNotice(`${planner.explanation} Add a Maps key to build the real route.`)
+        return
+      }
+
+      setRealPlanState('loading')
+      setNotice('Finding real places and calculating the walking route…')
+      const realPlan = await fetchRealPlan(planner.request, planner.title)
+      setPlan(realPlan)
+      setReplacementApplied(false)
+      setActiveStopIndex(0)
+      setRealPlanState('ready')
+      setServerState('online')
+      setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
+    } catch (error) {
+      setRealPlanState('error')
+      setServerState('offline')
+      setNotice(getPlannerErrorMessage(error))
+    } finally {
+      setIsPlanning(false)
+    }
   }
 
   function moveToNextStop() {
@@ -531,8 +624,8 @@ function App() {
               onChange={(event) => setIntent(event.target.value)}
               rows={3}
             />
-            <button className="primary-button" type="submit">
-              Update intent <span aria-hidden="true">↗</span>
+            <button className="primary-button" type="submit" disabled={isPlanning}>
+              {isPlanning ? 'Building your plan…' : 'Update intent'} <span aria-hidden="true">↗</span>
             </button>
           </form>
 
