@@ -17,6 +17,7 @@ function createActions(getItinerary: BukiWebMcpActions['getItinerary']): BukiWeb
     setOrigin: () => ({ status: 'ok' }),
     updateIntent: () => ({ status: 'ok' }),
     advanceToNextStop: () => ({ status: 'ok' }),
+    proposeStopRepair: () => ({ status: 'proposal_ready' }),
     getBukiContext: () => ({ status: 'ok' }),
   }
 }
@@ -52,19 +53,44 @@ describe('Buki WebMCP tools', () => {
     expect(calls).toEqual([expect.objectContaining({ name: 'get_itinerary', status: 'error' })])
   })
 
+  it('routes a stop-repair proposal through the current action without applying the route', async () => {
+    const calls: Array<Omit<WebMcpCallRecord, 'id' | 'timestamp'>> = []
+    const actionsRef = {
+      current: {
+        ...createActions(() => ({ status: 'ok' })),
+        proposeStopRepair: (input: Record<string, unknown>) => ({
+          status: 'proposal_ready',
+          stopId: input.stopId,
+          requiresUserConfirmation: true,
+        }),
+      },
+    }
+    const tool = createRegisteredTool(getDefinition('propose_stop_repair'), actionsRef, (call) => calls.push(call))
+
+    await expect(tool.execute({ stopId: 'stop-2' })).resolves.toEqual({
+      status: 'proposal_ready',
+      stopId: 'stop-2',
+      requiresUserConfirmation: true,
+    })
+    expect(calls).toEqual([expect.objectContaining({ name: 'propose_stop_repair', status: 'success' })])
+  })
+
   it('keeps schemas and annotations honest', () => {
     const names = BUKI_WEBMCP_TOOLS.map((tool) => tool.name)
     const search = getDefinition('search_nearby_places')
     const route = getDefinition('compute_walking_route')
     const planWalk = getDefinition('plan_walk')
+    const repair = getDefinition('propose_stop_repair')
 
     expect(names).toContain('plan_walk')
+    expect(names).toContain('propose_stop_repair')
     expect(names).not.toContain('propose_itinerary')
-    expect(names).not.toContain('replace_stop')
     expect(search.annotations).toEqual({ untrustedContentHint: true })
     expect(route.inputSchema.properties).toHaveProperty('toPlaceId')
     expect(route.inputSchema.properties).not.toHaveProperty('fromPlaceId')
     expect(planWalk.inputSchema.properties).toHaveProperty('availableMinutes')
     expect(planWalk.inputSchema.properties).toHaveProperty('maxWalkMinutes')
+    expect(repair.inputSchema.properties).toHaveProperty('stopId')
+    expect(repair.inputSchema.required).toEqual(['stopId'])
   })
 })

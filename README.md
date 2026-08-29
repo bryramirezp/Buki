@@ -17,14 +17,15 @@ The map behaves like an app, with direct pan and zoom, native zoom/fullscreen co
 
 ## WebMCP: the same journey for an agent
 
-Buki exposes ten tools with `document.modelContext.registerTool`. A compatible browser agent can work with the person through the same visible experience:
+Buki exposes eleven tools with `document.modelContext.registerTool`. A compatible browser agent can work with the person through the same visible experience:
 
 1. Call `set_origin` after the person approves a location.
 2. Call `plan_walk` with their intent. If duration or walking comfort is missing, it returns `needs_clarification` instead of querying Maps.
 3. Call `plan_walk` again with `availableMinutes` and `maxWalkMinutes` once the person answers.
 4. Read and guide the visible itinerary with `get_itinerary`, `get_place_status`, `compute_walking_route`, `focus_stop`, and `advance_to_next_stop`.
+5. Call `propose_stop_repair` if a person says a stop is unavailable. Buki shows the real alternative and requires the person to confirm or keep the current route.
 
-`search_nearby_places` only works after Buki has the person’s planning preferences, so an agent cannot create a route with invisible limits. The **WebMCP · 10 tools** button opens an in-app inspector with the browser-registered schemas and recent calls.
+`search_nearby_places` only works after Buki has the person’s planning preferences, so an agent cannot create a route with invisible limits. The **WebMCP · 11 tools** button opens an in-app inspector with the browser-registered schemas and recent calls.
 
 ## Run locally
 

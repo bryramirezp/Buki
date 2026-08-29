@@ -1,6 +1,6 @@
 # Buki — Build Plan
 
-Status: real-data flow implemented; WebMCP foundation included.
+Status: real-data flow and stop repair implemented locally; deployment and field verification pending.
 Initial validation scenario: Santiago Center, Chile.
 Base document: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
@@ -243,6 +243,7 @@ Currently registered tools:
 - `set_origin`;
 - `update_intent`;
 - `advance_to_next_stop`;
+- `propose_stop_repair`;
 - `get_buki_context`.
 
 Steps:
@@ -254,11 +255,13 @@ Steps:
 5. Keep equivalent manual controls.
 6. Test errors, incomplete inputs, and the absence of WebMCP.
 
-The page includes a visible inspector showing the ten tools, their browser-registered schemas, annotations, and a summary of recent calls. When the browser does not offer WebMCP, the inspector still shows local definitions and the manual experience remains operational.
+The page includes a visible inspector showing the eleven tools, their browser-registered schemas, annotations, and a summary of recent calls. When the browser does not offer WebMCP, the inspector still shows local definitions and the manual experience remains operational.
 
 A large tool catalog will not be implemented yet. Expanding WebMCP remains a discovery task after this flow is validated.
 
 ### Phase 6 — Stop repair
+
+Status: implemented locally; requires real-world verification before it is considered field-ready.
 
 Objective: demonstrate adaptation without rebuilding the entire itinerary.
 
@@ -273,6 +276,15 @@ Steps:
 7. Explain why the replacement was selected.
 8. Allow the person to accept or undo the repair.
 9. Show an “unknown” status when there is not enough evidence.
+
+Current implementation:
+
+- Each real stop lets the person report that it is unavailable.
+- Buki searches up to three nearby alternatives in the same place category, excludes existing stops, and checks real availability and a constrained route before proposing one.
+- The proposal compares the affected legs and the new total walking and itinerary time. It leaves the current route unchanged until the person explicitly accepts it.
+- Accepting redraws the verified route and markers; undo restores the previous route without another Maps request.
+- `propose_stop_repair` exposes the same proposal through WebMCP and returns `requiresUserConfirmation: true`; the person confirms in the visible UI.
+- If no compatible alternative exists, Buki keeps the original route and says so. Alternatives whose availability cannot be verified remain explicitly marked as unknown.
 
 News and external sources will be evaluated later. A news item must not change the plan automatically without showing its source, date, and confidence level.
 

@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { WebMcpInspector } from './components/WebMcpInspector'
-import type { GoogleMapProgress, GoogleMapsController } from './integrations/googleMaps'
+import type {
+  AppliedGoogleStopRepair,
+  GoogleMapProgress,
+  GoogleMapsController,
+  GoogleStopRepairProposal,
+} from './integrations/googleMaps'
 import {
+  applyGoogleStopRepair,
   buildGoogleTripPlan,
   clearGoogleMapRoute,
   MINIMUM_MAP_ZOOM,
@@ -9,6 +15,8 @@ import {
   describeGoogleMapPoint,
   enableGoogleMapPointSelection,
   moveGoogleMap,
+  proposeGoogleStopRepair,
+  undoGoogleStopRepair,
   updateGoogleMapMarkers,
 } from './integrations/googleMaps'
 import type {
@@ -62,6 +70,9 @@ const WALKING_OPTIONS = [
   { label: 'I’m happy to walk more', value: 40 },
 ] as const
 
+const WALK_LIMIT_NOTICE = 'No nearby route fits the walking limit you chose.'
+const TIME_LIMIT_NOTICE = 'No nearby route fits the time you chose.'
+
 const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
 const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? ''
 const mapsMapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim() ?? ''
@@ -78,8 +89,8 @@ function getGoogleErrorMessage(error: unknown) {
   if (error instanceof Error) {
     if (error.message === 'GOOGLE_MAPS_KEY_MISSING') return 'Configure a Google Maps key to build a real route.'
     if (error.message === 'GOOGLE_MAPS_NOT_ENOUGH_PLACES') return 'Google Maps did not find enough nearby places to build the route.'
-    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_WALK_LIMIT') return 'The available places do not fit your maximum walking time per leg.'
-    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT') return 'The available places do not fit your available time once walking and stop time are included.'
+    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_WALK_LIMIT') return WALK_LIMIT_NOTICE
+    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT') return TIME_LIMIT_NOTICE
     if (error.message.includes('REQUEST_DENIED') || error.message.includes('ApiNotActivated')) {
       return 'Google Maps rejected the request. Check enabled APIs, restrictions, and key billing.'
     }
@@ -175,6 +186,9 @@ function App() {
   const [origin, setOrigin] = useState<TripLocation | null>(null)
   const [plan, setPlan] = useState<TripPlan | null>(null)
   const [activeStopIndex, setActiveStopIndex] = useState(0)
+  const [repairProposal, setRepairProposal] = useState<GoogleStopRepairProposal | null>(null)
+  const [appliedRepair, setAppliedRepair] = useState<AppliedGoogleStopRepair | null>(null)
+  const [repairingStopId, setRepairingStopId] = useState<string | null>(null)
   const [planningActivityLabel, setPlanningActivityLabel] = useState('')
   const [notice, setNotice] = useState('')
   const [mapError, setMapError] = useState('')
@@ -274,6 +288,9 @@ function App() {
     setOriginMethod(source)
     setPlan(null)
     setActiveStopIndex(0)
+    setRepairProposal(null)
+    setAppliedRepair(null)
+    setRepairingStopId(null)
     clearGoogleMapRoute(controller)
     updateGoogleMapMarkers(controller, nextOrigin, [])
     setLocationState('selected')
@@ -388,6 +405,33 @@ function App() {
     if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
     setPlan(null)
     setActiveStopIndex(0)
+    setRepairProposal(null)
+    setAppliedRepair(null)
+    setRepairingStopId(null)
+  }
+
+  function adjustRouteConstraint(question: PlannerQuestion) {
+    const nextAnswers: PlannerAnswers = { ...plannerAnswers }
+    if (question === 'walking') {
+      delete nextAnswers.maxWalkMinutes
+      delete nextAnswers.walking
+    } else {
+      delete nextAnswers.availableMinutes
+      delete nextAnswers.duration
+    }
+
+    clearDraftRoute()
+    setPlannerAnswers(nextAnswers)
+    setClarification({
+      mode: 'clarification',
+      intent,
+      preferences: nextAnswers,
+      nextQuestion: question,
+    })
+    setReadyPlanner(null)
+    setPlannerRequest(null)
+    setCustomAnswer('')
+    setNotice('')
   }
 
   async function preparePlanFromIntent(nextIntent: string, answers: PlannerAnswers): Promise<PlannerResponse> {
@@ -484,6 +528,60 @@ function App() {
     }
   }
 
+  function repairErrorMessage(error: unknown) {
+    if (error instanceof Error && error.message === 'GOOGLE_MAPS_NO_REPLACEMENT') {
+      return 'Buki could not verify a compatible replacement nearby. Your current route is unchanged.'
+    }
+    return getGoogleErrorMessage(error)
+  }
+
+  async function requestStopRepair(stopId: string) {
+    if (!plan || !plannerRequest) {
+      setNotice('Buki needs the current route constraints before it can repair a stop.')
+      return null
+    }
+
+    setRepairProposal(null)
+    setNotice('')
+    setRepairingStopId(stopId)
+    beginPlanningActivity('Finding a real replacement')
+    try {
+      const proposal = await proposeGoogleStopRepair(plan, stopId, plannerRequest, advancePlanningActivity)
+      setRepairProposal(proposal)
+      return proposal
+    } catch (error) {
+      setNotice(repairErrorMessage(error))
+      throw error
+    } finally {
+      setRepairingStopId(null)
+      finishPlanningActivity()
+    }
+  }
+
+  function acceptStopRepair() {
+    if (!plan || !repairProposal || !googleMapRef.current) return
+    const applied = applyGoogleStopRepair(googleMapRef.current, plan, repairProposal)
+    setPlan(repairProposal.repairedPlan)
+    setActiveStopIndex(Math.min(activeStopIndex, repairProposal.repairedPlan.stops.length - 1))
+    setAppliedRepair(applied)
+    setRepairProposal(null)
+    setNotice('')
+  }
+
+  function discardStopRepair() {
+    setRepairProposal(null)
+    setNotice('')
+  }
+
+  function undoStopRepair() {
+    if (!appliedRepair || !googleMapRef.current) return
+    undoGoogleStopRepair(googleMapRef.current, appliedRepair)
+    setPlan(appliedRepair.previousPlan)
+    setActiveStopIndex(0)
+    setAppliedRepair(null)
+    setNotice('')
+  }
+
   function moveToNextStop() {
     if (!availableStops.length) {
       setNotice('Create a walk before starting a leg.')
@@ -527,6 +625,34 @@ function App() {
         checkedAt: stop.place.checkedAt,
         walkFromPrevious: stop.walkFromPrevious,
       })),
+    }
+  }
+
+  function serializeStopRepairProposal(proposal: GoogleStopRepairProposal) {
+    return {
+      status: 'proposal_ready',
+      originalStop: {
+        id: proposal.originalStop.id,
+        name: proposal.originalStop.place.name,
+        availability: proposal.originalStop.place.availability,
+      },
+      replacementStop: {
+        id: proposal.replacementStop.id,
+        name: proposal.replacementStop.place.name,
+        availability: proposal.replacementStop.place.availability,
+        availabilityLabel: proposal.replacementStop.place.availabilityLabel,
+      },
+      affectedLegs: {
+        before: proposal.affectedLegs.before,
+        after: proposal.affectedLegs.after,
+      },
+      totalWalkingMinutes: proposal.repairedPlan.totalWalkingMinutes,
+      totalEstimatedMinutes: proposal.repairedPlan.totalEstimatedMinutes,
+      warnings: proposal.repairedPlan.routeWarnings ?? [],
+      selectionReason: proposal.replacementStop.place.availability === 'unknown'
+        ? 'Same category and route limits, but availability is not confirmed.'
+        : 'Same category, available now, and within the current route limits.',
+      requiresUserConfirmation: true,
     }
   }
 
@@ -651,11 +777,20 @@ function App() {
       setClarification(null)
       setReadyPlanner(null)
       setPlannerRequest(null)
+      setRepairProposal(null)
+      setAppliedRepair(null)
       setNotice('Intent updated by an agent. It has not built a route yet.')
       return { status: 'ok', intent: nextIntent, planUpdated: false }
     },
     advanceToNextStop() {
       return moveToNextStop()
+    },
+    async proposeStopRepair(input) {
+      const stop = findToolStop(input)
+      if (!stop) throw new Error('STOP_NOT_FOUND')
+      const proposal = await requestStopRepair(stop.id)
+      if (!proposal) throw new Error('REPAIR_CONSTRAINTS_UNAVAILABLE')
+      return serializeStopRepairProposal(proposal)
     },
     getBukiContext() {
       return {
@@ -666,6 +801,7 @@ function App() {
         preferences: readyPlanner?.preferences ?? clarification?.preferences ?? plannerAnswers,
         nextQuestion: clarification?.nextQuestion ?? null,
         stopCount: stops.length,
+        repair: repairProposal ? 'awaiting_user_confirmation' : appliedRepair ? 'applied_can_undo' : 'none',
         manualControlsAvailable: true,
       }
     },
@@ -677,8 +813,14 @@ function App() {
     ? planningActivityLabel || 'Buki is thinking…'
     : plan ? 'Walk created'
       : readyPlanner ? 'Create my walk'
-        : clarification ? 'Continue with this answer'
+          : clarification ? 'Continue with this answer'
           : 'Continue when ready'
+
+  const routeConstraint = notice === WALK_LIMIT_NOTICE
+    ? 'walking'
+    : notice === TIME_LIMIT_NOTICE
+      ? 'duration'
+      : null
 
   function updateIntentDraft(nextIntent: string) {
     setIntent(nextIntent)
@@ -845,9 +987,28 @@ function App() {
             </button>
           </form>
 
-          {!plan && !isPlanning && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> We'll find real places and walking routes.</p>}
-
-          {notice && !isPlanning && <p className="notice" aria-live="polite">{notice}</p>}
+          {routeConstraint && !isPlanning ? (
+            <section className="constraint-notice" aria-live="assertive" aria-labelledby="constraint-notice-title">
+              <p className="section-kicker">Plan adjustment</p>
+              <h2 id="constraint-notice-title">
+                {routeConstraint === 'walking' ? 'This route needs a little more walking room.' : 'This route needs a little more time.'}
+              </h2>
+              <p>
+                {routeConstraint === 'walking'
+                  ? `The nearby places do not fit within ${plannerAnswers.maxWalkMinutes ?? 'your'} minutes per walk. Choose a new limit and Buki will try again.`
+                  : `The nearby places do not fit within ${plannerAnswers.availableMinutes ?? 'your'} available minutes. Choose more time and Buki will try again.`}
+              </p>
+              <button className="constraint-action" type="button" onClick={() => adjustRouteConstraint(routeConstraint)}>
+                <span>{routeConstraint === 'walking' ? 'Adjust walking limit' : 'Adjust available time'}</span>
+                <span aria-hidden="true">→</span>
+              </button>
+            </section>
+          ) : (
+            <>
+              {!plan && !isPlanning && !notice && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> We'll find real places and walking routes.</p>}
+              {notice && !isPlanning && <p className="notice" aria-live="polite">{notice}</p>}
+            </>
+          )}
           {locationState === 'denied' && <p className="state-hint">Location permission was denied. Pick a point on the map instead.</p>}
           {locationState === 'unsupported' && <p className="state-hint">This browser does not expose location access. Pick a point on the map instead.</p>}
 
@@ -870,6 +1031,48 @@ function App() {
             </section>
           )}
 
+          {repairProposal && (
+            <section className="repair-proposal" aria-live="polite" aria-labelledby="repair-proposal-title">
+              <p className="section-kicker">Route repair</p>
+              <h2 id="repair-proposal-title">Replace this stop?</h2>
+              <p className="repair-intro">Buki found a real nearby alternative of the same kind. Your route will only change after you confirm.</p>
+              <div className="repair-comparison">
+                <div>
+                  <span>Unavailable</span>
+                  <strong>{repairProposal.originalStop.place.name}</strong>
+                  <small>{repairProposal.affectedLegs.before.reduce((total, leg) => total + leg.minutes, 0)} min across affected legs</small>
+                </div>
+                <span className="repair-arrow" aria-hidden="true">→</span>
+                <div className="is-proposed">
+                  <span>Replacement</span>
+                  <strong>{repairProposal.replacementStop.place.name}</strong>
+                  <small>{repairProposal.affectedLegs.after.reduce((total, leg) => total + leg.minutes, 0)} min across affected legs</small>
+                </div>
+              </div>
+              <p className="repair-total">New route: {repairProposal.repairedPlan.totalWalkingMinutes} min walking · {repairProposal.repairedPlan.totalEstimatedMinutes} min total</p>
+              <p className="repair-selection-reason">
+                {repairProposal.replacementStop.place.availability === 'unknown'
+                  ? 'Same category and route limits, but availability is not confirmed.'
+                  : `Same category · ${repairProposal.replacementStop.place.availabilityLabel} · fits your current route limits.`}
+              </p>
+              {repairProposal.replacementStop.place.availability === 'unknown' && <p className="repair-warning">Availability is not confirmed. Check before you go.</p>}
+              <div className="repair-actions">
+                <button className="repair-accept" type="button" onClick={acceptStopRepair}>Replace stop <span aria-hidden="true">→</span></button>
+                <button className="repair-dismiss" type="button" onClick={discardStopRepair}>Keep current route</button>
+              </div>
+            </section>
+          )}
+
+          {appliedRepair && (
+            <section className="repair-applied" aria-live="polite">
+              <div>
+                <strong>{appliedRepair.proposal.replacementStop.place.name} replaced {appliedRepair.proposal.originalStop.place.name}.</strong>
+                <span>The route and markers are updated with real Maps data.</span>
+              </div>
+              <button type="button" onClick={undoStopRepair}>Undo</button>
+            </section>
+          )}
+
           {plan ? (
             <section className="stops-section" aria-labelledby="stops-title">
               <div className="section-heading stops-heading">
@@ -881,7 +1084,15 @@ function App() {
               </div>
               <div className="stops-list">
                 {stops.map((stop, index) => (
-                  <StopCard key={stop.id} stop={stop} isCurrent={currentStop?.id === stop.id} showWalking={index > 0 || Boolean(stop.walkFromPrevious)} />
+                  <StopCard
+                    key={stop.id}
+                    stop={stop}
+                    isCurrent={currentStop?.id === stop.id}
+                    showWalking={index > 0 || Boolean(stop.walkFromPrevious)}
+                    onRequestRepair={() => void requestStopRepair(stop.id).catch(() => undefined)}
+                    isRepairing={repairingStopId === stop.id}
+                    repairDisabled={Boolean(repairProposal || appliedRepair || repairingStopId)}
+                  />
                 ))}
               </div>
             </section>
@@ -912,9 +1123,12 @@ interface StopCardProps {
   stop: TripStop
   isCurrent: boolean
   showWalking: boolean
+  onRequestRepair: () => void
+  isRepairing: boolean
+  repairDisabled: boolean
 }
 
-function StopCard({ stop, isCurrent, showWalking }: StopCardProps) {
+function StopCard({ stop, isCurrent, showWalking, onRequestRepair, isRepairing, repairDisabled }: StopCardProps) {
   const place: TripPlace = stop.place
   const isClosed = place.availability === 'closed'
 
@@ -940,7 +1154,11 @@ function StopCard({ stop, isCurrent, showWalking }: StopCardProps) {
             <span>{place.checkedAt}</span>
           </div>
           {place.mapsUrl && <a className="maps-link" href={place.mapsUrl} target="_blank" rel="noreferrer">View on Google Maps ↗</a>}
-          {isClosed && <p className="availability-note">This place is currently unavailable. Buki will not invent a replacement.</p>}
+          <button className="repair-stop-button" type="button" onClick={onRequestRepair} disabled={repairDisabled}>
+            {isRepairing ? 'Finding an alternative…' : isClosed ? 'Find a real replacement' : 'This place is unavailable'}
+            <span aria-hidden="true">→</span>
+          </button>
+          {isClosed && <p className="availability-note">Buki will search real nearby places that keep your route constraints.</p>}
         </div>
       </article>
     </div>

@@ -28,6 +28,9 @@ export type GoogleMapProgress =
   | 'Checking nearby place details'
   | 'Calculating a walkable route'
   | 'Adding the route to your map'
+  | 'Searching for a replacement'
+  | 'Checking replacement availability'
+  | 'Checking the repaired route'
 
 let configuredKey = ''
 let loadPromise: Promise<void> | null = null
@@ -51,6 +54,24 @@ const STOP_DURATION_MINUTES: Record<PlaceKind, number> = {
 }
 
 const DEFAULT_SEARCH_RADIUS_METERS = 1800
+const REPAIR_CANDIDATE_COUNT = 3
+
+export interface GoogleStopRepairProposal {
+  originalStop: TripStop
+  replacementStop: TripStop
+  repairedPlan: TripPlan
+  affectedLegs: {
+    before: WalkingSegment[]
+    after: WalkingSegment[]
+  }
+  route: google.maps.routes.Route
+}
+
+export interface AppliedGoogleStopRepair {
+  previousPlan: TripPlan
+  proposal: GoogleStopRepairProposal
+  previousRoutePolylines: google.maps.Polyline[]
+}
 
 export const MINIMUM_MAP_ZOOM = 3
 export const MAXIMUM_MAP_ZOOM = 20
@@ -374,6 +395,40 @@ function assertRouteFitsRequest(route: RouteResult, places: TripPlace[], request
   }
 }
 
+function createTripPlan(
+  origin: TripLocation,
+  title: string,
+  city: string,
+  places: TripPlace[],
+  route: RouteResult,
+  extraWarnings: string[] = [],
+): TripPlan {
+  const stops: TripStop[] = places.map((place, index) => ({
+    id: place.id,
+    sequence: index + 1,
+    place,
+    walkFromPrevious: route.segments[index] ?? {
+      fromId: index === 0 ? origin.id : places[index - 1].id,
+      toId: place.id,
+      minutes: 0,
+      meters: 0,
+    },
+  }))
+
+  return {
+    title,
+    city,
+    origin,
+    totalWalkingMinutes: stops.reduce((sum, stop) => sum + stop.walkFromPrevious.minutes, 0),
+    totalEstimatedMinutes: stops.reduce((sum, stop) => sum + stop.walkFromPrevious.minutes, 0)
+      + places.reduce((sum, place) => sum + STOP_DURATION_MINUTES[place.kind], 0),
+    stops,
+    source: 'google-maps',
+    checkedAt: `Google Maps · ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
+    routeWarnings: [...new Set([...route.warnings, ...extraWarnings])],
+  }
+}
+
 function drawWalkingRoute(controller: GoogleMapsController, route: google.maps.routes.Route) {
   clearGoogleMapRoute(controller)
   controller.routePolylines = route.createPolylines({
@@ -405,30 +460,91 @@ export async function buildGoogleTripPlan(
   assertRouteFitsRequest(route, places, request)
   onProgress?.('Adding the route to your map')
   drawWalkingRoute(controller, route.route)
-  const stops: TripStop[] = places.map((place, index) => ({
-    id: place.id,
-    sequence: index + 1,
-    place,
-    walkFromPrevious: route.segments[index] ?? {
-      fromId: index === 0 ? origin.id : places[index - 1].id,
-      toId: place.id,
-      minutes: 0,
-      meters: 0,
-    },
-  }))
+  const plan = createTripPlan(origin, title, city, places, route)
+  updateGoogleMapMarkers(controller, origin, plan.stops)
+  return plan
+}
 
-  updateGoogleMapMarkers(controller, origin, stops)
+export async function proposeGoogleStopRepair(
+  plan: TripPlan,
+  stopId: string,
+  request: TripRequest,
+  onProgress?: (message: GoogleMapProgress) => void,
+): Promise<GoogleStopRepairProposal> {
+  const stopIndex = plan.stops.findIndex((stop) => stop.id === stopId || stop.place.id === stopId)
+  if (stopIndex < 0) throw new Error('GOOGLE_MAPS_REPAIR_STOP_NOT_FOUND')
 
-  return {
-    title,
-    city,
-    origin,
-    totalWalkingMinutes: stops.reduce((sum, stop) => sum + stop.walkFromPrevious.minutes, 0),
-    totalEstimatedMinutes: stops.reduce((sum, stop) => sum + stop.walkFromPrevious.minutes, 0)
-      + places.reduce((sum, place) => sum + STOP_DURATION_MINUTES[place.kind], 0),
-    stops,
-    source: 'google-maps',
-    checkedAt: `Google Maps · ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
-    routeWarnings: route.warnings,
+  const originalStop = plan.stops[stopIndex]
+  const excludedPlaceIds = new Set(plan.stops.map((stop) => stop.place.id))
+  const searchOrigin = stopIndex === 0
+    ? plan.origin.coordinates
+    : plan.stops[stopIndex - 1].place.coordinates
+
+  onProgress?.('Searching for a replacement')
+  const candidates = await findNearbyByKind(
+    searchOrigin,
+    originalStop.place.kind,
+    REPAIR_CANDIDATE_COUNT,
+    request.searchRadiusMeters,
+  )
+
+  onProgress?.('Checking replacement availability')
+  const replacements = (await Promise.all(
+    candidates
+      .filter((candidate) => !excludedPlaceIds.has(candidate.place.id))
+      .map(fetchPlaceDetails),
+  ))
+    .filter((place): place is TripPlace => place !== null && place.availability !== 'closed')
+    .sort((left, right) => Number(left.availability === 'unknown') - Number(right.availability === 'unknown'))
+
+  for (const replacement of replacements) {
+    const repairedPlaces = plan.stops.map((stop, index) => index === stopIndex ? replacement : stop.place)
+    onProgress?.('Checking the repaired route')
+    const route = await computeWalkingRoute(plan.origin.coordinates, repairedPlaces)
+    try {
+      assertRouteFitsRequest(route, repairedPlaces, request)
+    } catch {
+      continue
+    }
+
+    const repairedPlan = createTripPlan(
+      plan.origin,
+      plan.title,
+      plan.city,
+      repairedPlaces,
+      route,
+      replacement.availability === 'unknown' ? ['Replacement availability could not be verified.'] : [],
+    )
+    const affectedEndIndex = Math.min(stopIndex + 1, plan.stops.length - 1)
+    return {
+      originalStop,
+      replacementStop: repairedPlan.stops[stopIndex],
+      repairedPlan,
+      affectedLegs: {
+        before: plan.stops.slice(stopIndex, affectedEndIndex + 1).map((stop) => stop.walkFromPrevious),
+        after: repairedPlan.stops.slice(stopIndex, affectedEndIndex + 1).map((stop) => stop.walkFromPrevious),
+      },
+      route: route.route,
+    }
   }
+
+  throw new Error('GOOGLE_MAPS_NO_REPLACEMENT')
+}
+
+export function applyGoogleStopRepair(
+  controller: GoogleMapsController,
+  previousPlan: TripPlan,
+  proposal: GoogleStopRepairProposal,
+): AppliedGoogleStopRepair {
+  const previousRoutePolylines = controller.routePolylines
+  drawWalkingRoute(controller, proposal.route)
+  updateGoogleMapMarkers(controller, proposal.repairedPlan.origin, proposal.repairedPlan.stops)
+  return { previousPlan, proposal, previousRoutePolylines }
+}
+
+export function undoGoogleStopRepair(controller: GoogleMapsController, repair: AppliedGoogleStopRepair) {
+  clearGoogleMapRoute(controller)
+  controller.routePolylines = repair.previousRoutePolylines
+  controller.routePolylines.forEach((polyline) => polyline.setMap(controller.map))
+  updateGoogleMapMarkers(controller, repair.previousPlan.origin, repair.previousPlan.stops)
 }

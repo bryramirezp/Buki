@@ -10,6 +10,7 @@ export type WebMcpToolName =
   | 'set_origin'
   | 'update_intent'
   | 'advance_to_next_stop'
+  | 'propose_stop_repair'
   | 'get_buki_context'
 
 export interface WebMcpToolDefinition {
@@ -42,6 +43,7 @@ export interface BukiWebMcpActions {
   setOrigin: (input: Record<string, unknown>) => Promise<unknown> | unknown
   updateIntent: (input: Record<string, unknown>) => Promise<unknown> | unknown
   advanceToNextStop: () => Promise<unknown> | unknown
+  proposeStopRepair: (input: Record<string, unknown>) => Promise<unknown> | unknown
   getBukiContext: () => Promise<unknown> | unknown
 }
 
@@ -161,6 +163,20 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
     annotations: { untrustedContentHint: true },
   },
   {
+    name: 'propose_stop_repair',
+    title: 'Propose a stop repair',
+    description: 'Finds a real nearby replacement for an unavailable stop while preserving the current origin and constraints. It shows a proposal in Buki and never changes the route until the person confirms.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        stopId: { type: 'string', description: 'Unavailable stop identifier.' },
+      },
+      required: ['stopId'],
+      additionalProperties: false,
+    },
+    annotations: { untrustedContentHint: true },
+  },
+  {
     name: 'get_buki_context',
     title: 'Get Buki context',
     description: 'Returns a summary of Buki, WebMCP availability, and the plan data source.',
@@ -179,6 +195,7 @@ const ACTIONS_BY_TOOL: Record<WebMcpToolName, keyof BukiWebMcpActions> = {
   set_origin: 'setOrigin',
   update_intent: 'updateIntent',
   advance_to_next_stop: 'advanceToNextStop',
+  propose_stop_repair: 'proposeStopRepair',
   get_buki_context: 'getBukiContext',
 }
 
