@@ -9,4 +9,4 @@ Documentos principales:
 - [`BUKI_PRODUCT_CONTRACT.md`](./BUKI_PRODUCT_CONTRACT.md): promesa, usuario, límites y criterios de éxito.
 - [`BUKI_BUILD_PLAN.md`](./BUKI_BUILD_PLAN.md): fases de construcción, arquitectura, pruebas y regla de parada.
 
-Estado actual: Fase 2 completada en modo mock. Buki tiene una experiencia mobile-first con mapa conceptual, plan simulado y reparación de una parada; las funciones server-side de Vercel quedan preparadas para el LLM.
+Estado actual: Fase 3 implementada con integración opcional de Google Maps. Buki tiene una experiencia mobile-first con fallback mock, geolocalización con consentimiento, búsqueda real de lugares, estado de apertura y ruta caminable; falta validarla con una clave de Google Maps restringida.

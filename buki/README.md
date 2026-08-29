@@ -1,8 +1,8 @@
 # Buki app
 
-Frontend React + Vite + TypeScript. La Fase 2 valida el recorrido mobile-first con
-datos simulados; las funciones server-side de Vercel quedan disponibles para la
-orquestación del LLM.
+Frontend React + Vite + TypeScript. La Fase 3 integra opcionalmente Google Maps
+desde el navegador y conserva datos simulados como fallback; las funciones
+server-side de Vercel quedan disponibles para la orquestación del LLM.
 
 ## Desarrollo local
 
@@ -30,3 +30,7 @@ LLM_API_KEY=
 LLM_API_URL=
 LLM_MODEL=
 ```
+
+Con una `VITE_GOOGLE_MAPS_API_KEY` válida y restringida por dominio/API, Buki
+puede cargar el mapa real y el botón “Buscar lugares reales cerca”. Sin esa
+variable, la aplicación inicia en modo mock sin hacer llamadas a Google Maps.

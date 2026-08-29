@@ -1,6 +1,6 @@
 # Buki — Plan de construcción
 
-Estado: Fase 2 completada en modo mock
+Estado: Fase 3 implementada; falta validar con una clave restringida de Google Maps
 Escenario de validación inicial: centro de Santiago de Chile  
 Documento base: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
@@ -89,7 +89,7 @@ Para probar la promesa de “mapa real” se usará Google Maps Platform de punt
 
 - Maps JavaScript API desde el frontend para el mapa incrustado.
 - Places API para lugares y detalles, usando la modalidad compatible con frontend cuando corresponda.
-- Routes API para rutas caminando, usando la modalidad compatible con frontend cuando corresponda.
+- Directions Service de Maps JavaScript API para rutas caminando en el MVP frontend. La documentación actual lo marca como deprecado, así que la migración a Routes Library/API queda registrada como seguimiento técnico antes de escalar.
 
 La clave de Google Maps para el navegador no se considera un secreto: se restringirá por dominio, APIs y cuotas. El LLM sí se invocará desde una función server-side de Vercel con `LLM_API_KEY`, que nunca se incluirá en variables `VITE_*` ni en el bundle del frontend. No se mantendrá un servidor FastAPI separado para el MVP.
 
@@ -172,6 +172,8 @@ Salida de fase: una persona puede entender el flujo completo sin conocer WebMCP 
 
 ### Fase 3 — Recorrido real con Google Maps
 
+Estado: implementada con fallback mock; la prueba contra Google queda pendiente de configurar una clave válida y restringida.
+
 Objetivo: reemplazar datos sintéticos por datos geográficos reales en la ciudad seleccionada.
 
 Pasos:
@@ -187,6 +189,16 @@ Pasos:
 9. Manejar permisos denegados, resultados vacíos, límites y errores de API.
 
 Salida de fase: desde un punto de la ciudad seleccionada se pueden mostrar lugares reales y una ruta caminable válida dentro de Buki.
+
+Implementación actual:
+
+- `@googlemaps/js-api-loader` carga Maps JavaScript API solo cuando existe `VITE_GOOGLE_MAPS_API_KEY`.
+- `Place.searchNearby()` busca candidatos por comida, cultura y paseo al aire libre; `fetchFields()` obtiene detalles únicamente de los finalistas.
+- `Place.isOpen()` y el estado del negocio se muestran como abierto, cerrado o desconocido.
+- `DirectionsService` calcula una ruta `WALKING` con hasta tres paradas y dibuja el recorrido dentro de Buki.
+- Un botón solicita geolocalización del dispositivo con consentimiento del navegador; si se deniega, se conserva el punto manual.
+- Sin clave, sin permisos o ante un error de API, la experiencia vuelve a datos mock y explica el motivo en la interfaz.
+- La intención todavía no se interpreta con el LLM; eso pertenece a Fase 4. En esta fase el buscador real usa tres categorías base para validar la integración geográfica.
 
 ### Fase 4 — Lenguaje natural y planificación
 

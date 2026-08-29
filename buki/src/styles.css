@@ -24,6 +24,16 @@ button { cursor: pointer; }
   background: #a8c2b0;
 }
 
+.google-map-canvas { position: absolute; inset: 0; z-index: 0; background: #d9e1db; transition: opacity .2s ease; }
+.google-map-canvas.is-hidden { opacity: 0; pointer-events: none; }
+.google-map-canvas.is-visible { opacity: 1; }
+.map-stage.is-google-map { background: #d9e1db; }
+.map-stage.is-google-map::before, .map-stage.is-google-map::after { background: transparent; }
+.map-stage.is-google-map .map-grid,
+.map-stage.is-google-map .map-streets,
+.map-stage.is-google-map .map-route { display: none; }
+.map-stage.is-google-map .map-location-label { background: rgba(19,62,47,.72); }
+
 .map-grid,
 .map-stage::before,
 .map-stage::after,
@@ -127,6 +137,7 @@ h1, h2, h3 { letter-spacing: -.045em; }
 .plan-header h1 { max-width: 12ch; margin-bottom: .36rem; font-size: clamp(2.1rem, 8vw, 3.25rem); line-height: .94; }
 .plan-location { margin-bottom: 0; color: #708077; font-size: .76rem; }
 .plan-status { padding: .36rem .55rem; border: 1px solid #c9dfcf; border-radius: 999px; color: #3b7252; font-size: .65rem; font-weight: 750; background: #e9f3e8; }
+.plan-status.is-real { border-color: #b8d2dc; color: #286379; background: #e7f3f6; }
 
 .intent-form { margin-top: 1.5rem; }
 .intent-form label { display: block; margin-bottom: .5rem; color: #31574a; font-size: .78rem; font-weight: 750; }
@@ -142,10 +153,18 @@ h1, h2, h3 { letter-spacing: -.045em; }
 .section-heading h2 { margin-bottom: 0; font-size: 1.18rem; }
 .location-icon { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: .6rem; color: #c26c4e; font-size: 1.25rem; background: #f8dfd3; }
 .location-card select { width: 100%; margin-top: .9rem; padding: .72rem .76rem; border: 1px solid #d7d4c8; border-radius: .65rem; outline: none; color: #2a4b3f; font-size: .8rem; background: #fffef9; }
+.location-actions { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; }
 .text-button { margin-top: .72rem; padding: 0; border: 0; color: #a85f43; font-size: .72rem; font-weight: 750; background: transparent; }
+.text-button.secondary { color: #678170; }
+.text-button:disabled, .real-search-button:disabled { cursor: wait; opacity: .62; }
 .text-button span { margin-right: .25rem; font-size: 1rem; }
+.real-search-button { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 1rem; padding: .7rem .78rem; border: 1px solid #bbd4c1; border-radius: .68rem; color: #2e6048; font-size: .74rem; font-weight: 800; background: #e7f2e6; }
+.real-search-button:hover { border-color: #8db39a; background: #dcecdc; }
+.key-hint, .state-hint { margin: .8rem 0 0; color: #7a847b; font-size: .68rem; line-height: 1.4; }
+.key-hint code { padding: .1rem .25rem; border-radius: .25rem; color: #5c6c60; font-size: .64rem; background: #e4e4d9; }
 
 .notice { margin: 1rem 0 0; padding: .65rem .75rem; border-left: 3px solid #d9b66d; color: #52685b; font-size: .72rem; line-height: 1.35; background: #fff8e5; }
+.state-hint { margin-top: .55rem; padding-left: .15rem; }
 
 .next-stop-card { color: #f7f5ed; background: #17362e; box-shadow: 0 .8rem 1.5rem rgba(23,54,46,.16); }
 .next-stop-card .section-kicker { color: #d9b66d; }
@@ -180,6 +199,8 @@ h1, h2, h3 { letter-spacing: -.045em; }
 .stop-card.is-closed h3 { color: #7b6259; }
 .stop-card-body > p { margin-bottom: .7rem; color: #66776e; font-size: .75rem; line-height: 1.4; }
 .stop-card-details { display: flex; justify-content: space-between; gap: .6rem; color: #9a9b91; font-size: .62rem; }
+.maps-link { display: inline-block; margin-top: .62rem; color: #a85f43; font-size: .65rem; font-weight: 800; text-decoration: none; }
+.maps-link:hover { text-decoration: underline; }
 .repair-box, .replacement-box { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-top: .85rem; padding: .7rem; border-radius: .65rem; font-size: .66rem; }
 .repair-box { border: 1px solid #edc4b6; background: #fff0e9; }
 .replacement-box { border: 1px solid #bcd9bf; background: #ebf5e9; }
@@ -194,6 +215,7 @@ h1, h2, h3 { letter-spacing: -.045em; }
 
 .mock-footer { display: flex; align-items: start; gap: .65rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e2dfd4; color: #849087; font-size: .66rem; line-height: 1.4; }
 .mock-footer .mock-dot { flex: 0 0 auto; margin-top: .22rem; width: .38rem; height: .38rem; background: #7eac8e; box-shadow: none; }
+.mock-footer .mock-dot.is-real { background: #478ca4; }
 
 @media (max-width: 390px) {
   .map-stop-name { max-width: 6.5rem; }

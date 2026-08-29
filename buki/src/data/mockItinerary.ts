@@ -16,6 +16,7 @@ export const MOCK_LOCATIONS: TripLocation[] = [
     detail: 'Centro de Santiago',
     x: 48,
     y: 53,
+    coordinates: { lat: -33.4372, lng: -70.6506 },
   },
   {
     id: 'barrio-lastarria',
@@ -23,6 +24,7 @@ export const MOCK_LOCATIONS: TripLocation[] = [
     detail: 'José Victorino Lastarria',
     x: 30,
     y: 68,
+    coordinates: { lat: -33.4364, lng: -70.6396 },
   },
   {
     id: 'parque-forestal',
@@ -30,6 +32,7 @@ export const MOCK_LOCATIONS: TripLocation[] = [
     detail: 'Avenida José María Caro',
     x: 25,
     y: 40,
+    coordinates: { lat: -33.4334, lng: -70.6472 },
   },
 ]
 
@@ -45,6 +48,8 @@ const MOCK_STOPS: TripPlace[] = [
     checkedAt: 'Consultado hace 2 min',
     x: 75,
     y: 35,
+    coordinates: { lat: -33.4329, lng: -70.6527 },
+    mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Mercado+Central+Santiago',
   },
   {
     id: 'museo-precolombino',
@@ -57,6 +62,8 @@ const MOCK_STOPS: TripPlace[] = [
     checkedAt: 'Consultado hace 2 min',
     x: 57,
     y: 70,
+    coordinates: { lat: -33.4351, lng: -70.6505 },
+    mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Museo+Chileno+de+Arte+Precolombino',
   },
   {
     id: 'cerro-santa-lucia',
@@ -69,6 +76,8 @@ const MOCK_STOPS: TripPlace[] = [
     checkedAt: 'Consultado hace 2 min',
     x: 29,
     y: 84,
+    coordinates: { lat: -33.4375, lng: -70.6433 },
+    mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Cerro+Santa+Lucia+Santiago',
   },
 ]
 
@@ -110,6 +119,8 @@ export function getMockItinerary(originId = 'plaza-armas'): TripPlan {
     origin,
     totalWalkingMinutes: legMinutes.reduce((sum, minutes) => sum + minutes, 0),
     stops,
+    source: 'mock',
+    checkedAt: 'Datos simulados',
   }
 }
 
@@ -126,6 +137,8 @@ export const MOCK_ALTERNATIVE: PlaceAlternative = {
     checkedAt: 'Consultado hace 2 min',
     x: 61,
     y: 59,
+    coordinates: { lat: -33.4421, lng: -70.6536 },
+    mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Centro+Cultural+La+Moneda',
   },
   walkFromPrevious: {
     fromId: 'mercado-central',

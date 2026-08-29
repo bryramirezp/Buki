@@ -45,12 +45,18 @@ export type PlaceAvailability = 'open' | 'closed' | 'unknown'
 
 export type PlaceKind = 'food' | 'culture' | 'view'
 
+export interface GeoPoint {
+  lat: number
+  lng: number
+}
+
 export interface TripLocation {
   id: string
   name: string
   detail: string
   x: number
   y: number
+  coordinates?: GeoPoint
 }
 
 export interface TripPlace {
@@ -64,6 +70,8 @@ export interface TripPlace {
   checkedAt: string
   x: number
   y: number
+  coordinates?: GeoPoint
+  mapsUrl?: string
 }
 
 export interface WalkingSegment {
@@ -71,6 +79,7 @@ export interface WalkingSegment {
   toId: string
   minutes: number
   meters: number
+  warning?: string
 }
 
 export interface TripStop {
@@ -86,6 +95,9 @@ export interface TripPlan {
   origin: TripLocation
   totalWalkingMinutes: number
   stops: TripStop[]
+  source?: 'mock' | 'google-maps'
+  checkedAt?: string
+  routeWarnings?: string[]
 }
 
 export interface PlaceAlternative {
