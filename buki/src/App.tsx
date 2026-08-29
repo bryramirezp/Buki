@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { WebMcpInspector } from './components/WebMcpInspector'
 import type { GoogleMapsController } from './integrations/googleMaps'
 import {
   buildGoogleTripPlan,
@@ -7,6 +8,8 @@ import {
   updateGoogleMapMarkers,
 } from './integrations/googleMaps'
 import type { TripLocation, TripPlace, TripStop } from './types'
+import { useWebMcp } from './hooks/useWebMcp'
+import type { BukiWebMcpActions } from './integrations/webmcp'
 import {
   DEFAULT_INTENT,
   getMockItinerary,
@@ -68,6 +71,7 @@ function App() {
   const [activeStopIndex, setActiveStopIndex] = useState(0)
   const [notice, setNotice] = useState('')
   const [mapError, setMapError] = useState('')
+  const [inspectorOpen, setInspectorOpen] = useState(false)
 
   useEffect(() => {
     if (isMock) return
@@ -221,6 +225,19 @@ function App() {
     )
   }
 
+  async function fetchRealPlan() {
+    if (!origin.coordinates) {
+      throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
+    }
+    const controller = await ensureGoogleMap(origin.coordinates)
+    return buildGoogleTripPlan(
+      controller,
+      origin,
+      'Una ruta para explorar ahora',
+      origin.detail,
+    )
+  }
+
   async function searchRealPlan() {
     if (!mapsApiKey) {
       setNotice('Agrega VITE_GOOGLE_MAPS_API_KEY en tu entorno local para consultar lugares reales.')
@@ -234,13 +251,7 @@ function App() {
     setRealPlanState('loading')
     setNotice('Consultando lugares, horarios y ruta caminable…')
     try {
-      const controller = await ensureGoogleMap(origin.coordinates)
-      const realPlan = await buildGoogleTripPlan(
-        controller,
-        origin,
-        'Una ruta para explorar ahora',
-        origin.detail,
-      )
+      const realPlan = await fetchRealPlan()
       setPlan(realPlan)
       setReplacementApplied(false)
       setActiveStopIndex(0)
@@ -281,6 +292,143 @@ function App() {
     setNotice('Reemplazo deshecho. La parada original vuelve a estar marcada como cerrada.')
   }
 
+  function serializePlanData(currentPlan: typeof plan, currentStops: typeof effectiveStops, currentWalkingMinutes: number) {
+    return {
+      title: currentPlan.title,
+      city: currentPlan.city,
+      source: currentPlan.source ?? 'mock',
+      checkedAt: currentPlan.checkedAt ?? 'Datos simulados',
+      origin: { id: currentPlan.origin.id, name: currentPlan.origin.name, detail: currentPlan.origin.detail },
+      totalWalkingMinutes: currentWalkingMinutes,
+      stops: currentStops.map((stop) => ({
+        id: stop.place.id,
+        sequence: stop.sequence,
+        name: stop.place.name,
+        kind: stop.place.kind,
+        address: stop.place.address,
+        availability: stop.place.availability,
+        availabilityLabel: stop.place.availabilityLabel,
+        checkedAt: stop.place.checkedAt,
+        walkFromPrevious: stop.walkFromPrevious,
+      })),
+    }
+  }
+
+  function serializePlan() {
+    return serializePlanData(plan, effectiveStops, totalWalkingMinutes)
+  }
+
+  function findToolStop(input: Record<string, unknown>) {
+    const stopId = typeof input.stopId === 'string' ? input.stopId : ''
+    return effectiveStops.find((stop) => stop.id === stopId || stop.place.id === stopId)
+  }
+
+  const webMcpActions: BukiWebMcpActions = {
+    async searchNearbyPlaces(input) {
+      if (mapsApiKey && origin.coordinates) {
+        try {
+          const realPlan = await fetchRealPlan()
+          setPlan(realPlan)
+          setReplacementApplied(false)
+          setActiveStopIndex(0)
+          setRealPlanState('ready')
+          return { status: 'ok', source: 'google-maps', itinerary: serializePlanData(realPlan, realPlan.stops, realPlan.totalWalkingMinutes) }
+        } catch (error) {
+          return { status: 'error', message: getGoogleErrorMessage(error), itinerary: serializePlan() }
+        }
+      }
+      const requestedKind = typeof input.kind === 'string' ? input.kind : undefined
+      return {
+        status: 'ok',
+        source: 'mock',
+        message: 'Google Maps no está configurado; se devolvieron datos simulados.',
+        places: effectiveStops
+          .filter((stop) => !requestedKind || stop.place.kind === requestedKind)
+          .map((stop) => ({ id: stop.place.id, name: stop.place.name, kind: stop.place.kind, availability: stop.place.availability })),
+      }
+    },
+    getPlaceStatus(input) {
+      const stop = findToolStop(input)
+      if (!stop) throw new Error('PLACE_NOT_FOUND')
+      return {
+        status: 'ok',
+        placeId: stop.place.id,
+        name: stop.place.name,
+        availability: stop.place.availability,
+        availabilityLabel: stop.place.availabilityLabel,
+        checkedAt: stop.place.checkedAt,
+      }
+    },
+    computeWalkingRoute(input) {
+      const stop = findToolStop({ stopId: input.toPlaceId })
+      if (!stop) throw new Error('DESTINATION_NOT_FOUND')
+      return { status: 'ok', route: stop.walkFromPrevious, source: plan.source ?? 'mock' }
+    },
+    getItinerary: serializePlan,
+    proposeItinerary(input) {
+      const requestedIntent = typeof input.intent === 'string' ? input.intent : intent
+      setNotice('Un agente preparó una propuesta visible sobre el plan actual.')
+      return { status: 'proposal', intent: requestedIntent, itinerary: serializePlan(), applied: false }
+    },
+    replaceStop(input) {
+      const stop = findToolStop(input)
+      if (!stop) throw new Error('STOP_NOT_FOUND')
+      if (!usingMockRepair || stop.id !== MOCK_ALTERNATIVE.replacesStopId) {
+        return { status: 'unavailable', message: 'Esta fase solo tiene un reemplazo simulado para la parada cultural.' }
+      }
+      const shouldApply = input.apply === true
+      if (shouldApply) applyReplacement()
+      else setNotice('Un agente propuso reemplazar la parada; aún no se ha aplicado.')
+      return {
+        status: shouldApply ? 'applied' : 'proposal',
+        replacedStopId: stop.id,
+        replacement: MOCK_ALTERNATIVE.place,
+        applied: shouldApply,
+      }
+    },
+    focusStop(input) {
+      const stop = findToolStop(input)
+      if (!stop) throw new Error('STOP_NOT_FOUND')
+      const nextIndex = availableStops.findIndex((item) => item.id === stop.id)
+      if (nextIndex < 0) throw new Error('STOP_NOT_AVAILABLE')
+      setActiveStopIndex(nextIndex)
+      setNotice(`Siguiente parada enfocada: ${stop.place.name}.`)
+      return { status: 'ok', focusedStopId: stop.id, name: stop.place.name }
+    },
+    setOrigin(input) {
+      const locationId = typeof input.locationId === 'string' ? input.locationId : ''
+      if (locationId === 'current-location') return { status: 'needs_user_consent', message: 'La ubicación del dispositivo debe autorizarla la persona.' }
+      const location = MOCK_LOCATIONS.find((item) => item.id === locationId)
+      if (!location) throw new Error('LOCATION_NOT_FOUND')
+      changeLocation(locationId)
+      return { status: 'ok', origin: { id: location.id, name: location.name, detail: location.detail } }
+    },
+    updateIntent(input) {
+      const nextIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
+      if (!nextIntent) throw new Error('INTENT_REQUIRED')
+      setIntent(nextIntent)
+      setNotice('Intención actualizada por un agente; el plan aún no fue recalculado.')
+      return { status: 'ok', intent: nextIntent, planUpdated: false }
+    },
+    advanceToNextStop() {
+      const nextStop = availableStops[Math.min(activeStopIndex + 1, availableStops.length - 1)]
+      moveToNextStop()
+      return { status: 'ok', nextStop: nextStop ? { id: nextStop.id, name: nextStop.place.name } : null }
+    },
+    getBukiContext() {
+      return {
+        app: 'buki',
+        webmcp: Boolean(document.modelContext),
+        mapSource: plan.source ?? 'mock',
+        origin: plan.origin.name,
+        stopCount: effectiveStops.length,
+        manualControlsAvailable: true,
+      }
+    },
+  }
+
+  const webmcp = useWebMcp(webMcpActions)
+
   return (
     <main className={`app-shell ${mapState === 'ready' ? 'has-real-map' : ''}`}>
       <section className={`map-stage ${mapState === 'ready' ? 'is-google-map' : ''}`} aria-label={mapState === 'ready' ? 'Mapa real del recorrido' : 'Mapa simulado del recorrido'}>
@@ -302,7 +450,14 @@ function App() {
             <span className="brand-mark">b</span>
             <span>buki</span>
           </div>
-          <span className="map-mode">{mapLabel}</span>
+          <div className="map-header-actions">
+            <button className="webmcp-connection voyage-connection" data-testid="open-webmcp-inspector" type="button" onClick={() => setInspectorOpen(true)}>
+              <span className={`webmcp-status-dot voyage-status-dot is-${webmcp.status}`} />
+              <span>WebMCP</span>
+              <span className="webmcp-tool-count voyage-tool-count">{webmcp.definitions.length} tools</span>
+            </button>
+            <span className="map-mode">{mapLabel}</span>
+          </div>
         </div>
 
         <div className="map-location-label">
@@ -479,6 +634,15 @@ function App() {
           </footer>
         </div>
       </section>
+      <WebMcpInspector
+        open={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+        status={webmcp.status}
+        definitions={webmcp.definitions}
+        registeredTools={webmcp.registeredTools}
+        registeredCount={webmcp.registeredCount}
+        calls={webmcp.calls}
+      />
     </main>
   )
 }

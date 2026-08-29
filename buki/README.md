@@ -34,3 +34,11 @@ LLM_MODEL=
 Con una `VITE_GOOGLE_MAPS_API_KEY` válida y restringida por dominio/API, Buki
 puede cargar el mapa real y el botón “Buscar lugares reales cerca”. Sin esa
 variable, la aplicación inicia en modo mock sin hacer llamadas a Google Maps.
+
+## WebMCP
+
+Buki registra once herramientas mediante `document.modelContext.registerTool`.
+El botón “WebMCP · 11 tools” abre un inspector dentro de la aplicación con el
+estado de registro, esquemas, anotaciones de solo lectura y últimas invocaciones.
+En un navegador sin WebMCP, las herramientas quedan visibles como definidas y
+los controles manuales siguen funcionando.

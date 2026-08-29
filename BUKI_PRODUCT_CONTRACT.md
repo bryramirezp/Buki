@@ -123,6 +123,11 @@ WebMCP será una capa de interacción para el agente, no el argumento de valor p
 - `replace_stop`;
 - `focus_stop`.
 
+La implementación del challenge amplía esta base con `set_origin`, `update_intent`,
+`advance_to_next_stop` y `get_buki_context`, para un total actual de once
+herramientas registradas. El inspector visual de Buki permite revisar sus
+esquemas y estado sin convertir WebMCP en un requisito para el uso manual.
+
 ## Pendiente posterior al MVP: ampliar WebMCP
 
 La primera versión solo necesita las capacidades mínimas para construir, leer y reparar un plan caminable. Queda pendiente investigar el alcance completo de WebMCP dentro de Buki: qué otras partes de la experiencia podría consultar, coordinar o adaptar un agente además de reparar una parada.

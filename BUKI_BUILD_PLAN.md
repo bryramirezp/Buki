@@ -1,6 +1,6 @@
 # Buki — Plan de construcción
 
-Estado: Fase 3 implementada; falta validar con una clave restringida de Google Maps
+Estado: Fase 3 implementada; WebMCP base incorporado; falta validar con una clave restringida de Google Maps
 Escenario de validación inicial: centro de Santiago de Chile  
 Documento base: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
@@ -226,9 +226,11 @@ Salida de fase: el escenario de validación se inicia con lenguaje natural y no 
 
 ### Fase 5 — WebMCP mínimo
 
+Estado: base implementada en paralelo para cumplir el challenge; pendiente conectar la planificación de lenguaje natural de Fase 4.
+
 Objetivo: permitir que un agente use las capacidades reales de Buki.
 
-Herramientas iniciales conceptuales:
+Herramientas registradas actualmente:
 
 - `search_nearby_places`;
 - `get_place_status`;
@@ -236,7 +238,11 @@ Herramientas iniciales conceptuales:
 - `get_itinerary`;
 - `propose_itinerary`;
 - `replace_stop`;
-- `focus_stop`.
+- `focus_stop`;
+- `set_origin`;
+- `update_intent`;
+- `advance_to_next_stop`;
+- `get_buki_context`.
 
 Pasos:
 
@@ -246,6 +252,11 @@ Pasos:
 4. Registrar cada invocación y resultado de forma resumida.
 5. Mantener controles manuales equivalentes.
 6. Probar errores, entradas incompletas y ausencia de WebMCP.
+
+La página incluye un inspector visible que muestra las once herramientas, sus
+esquemas, si fueron registradas por `document.modelContext` y el resumen de las
+últimas invocaciones. Cuando el navegador no ofrece WebMCP, el inspector sigue
+mostrando la definición local y la experiencia manual permanece operativa.
 
 No se implementará todavía un catálogo grande de tools. La ampliación del alcance de WebMCP queda pendiente de descubrimiento después de validar este flujo.
 

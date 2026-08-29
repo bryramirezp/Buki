@@ -15,6 +15,7 @@
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@mcp-b/webmcp-types": "^5.0.1",
     "@types/google.maps": "^3.66.0",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.10",
