@@ -98,11 +98,13 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   {
     name: 'plan_walk',
     title: 'Build a walking plan',
-    description: 'Uses the LLM to interpret a person’s intent, then uses Google Maps to build and display a real walking plan in Buki.',
+    description: 'Uses the LLM to interpret a person’s intent. If duration or walking comfort is missing, returns the next question without querying Google Maps; otherwise builds and displays a real walking plan in Buki.',
     inputSchema: {
       type: 'object',
       properties: {
         intent: { type: 'string', description: 'What the person wants to do.' },
+        availableMinutes: { type: 'integer', minimum: 30, maximum: 720, description: 'Total time the person has for the itinerary.' },
+        maxWalkMinutes: { type: 'integer', minimum: 5, maximum: 90, description: 'Maximum comfortable walking time for one leg.' },
       },
       required: ['intent'],
       additionalProperties: false,

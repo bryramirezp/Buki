@@ -15,6 +15,38 @@ export interface TripRequest {
   searchRadiusMeters?: number
 }
 
+export type PlannerQuestion = 'duration' | 'walking'
+
+export interface PlannerAnswers {
+  availableMinutes?: number
+  maxWalkMinutes?: number
+  duration?: string
+  walking?: string
+}
+
+export interface PlannerPreferences {
+  availableMinutes?: number
+  maxWalkMinutes?: number
+}
+
+export interface PlannerClarificationResponse {
+  mode: 'clarification'
+  intent: string
+  preferences: PlannerPreferences
+  nextQuestion: PlannerQuestion
+}
+
+export interface PlannerReadyResponse {
+  mode: 'ready'
+  intent: string
+  title: string
+  explanation: string
+  preferences: Required<PlannerPreferences>
+  request: TripRequest
+}
+
+export type PlannerResponse = PlannerClarificationResponse | PlannerReadyResponse
+
 export interface TripLocation {
   id: string
   name: string

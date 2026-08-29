@@ -1,4 +1,10 @@
-import type { PlaceKind, TripRequest } from '../src/types'
+import type {
+  PlaceKind,
+  PlannerAnswers,
+  PlannerPreferences,
+  PlannerResponse,
+  TripRequest,
+} from '../src/types'
 
 type RequestLike = {
   method?: string
@@ -12,6 +18,7 @@ type ResponseLike = {
 
 type PlanInput = {
   intent?: unknown
+  answers?: unknown
 }
 
 type LlmPayload = {
@@ -25,8 +32,8 @@ type LlmPayload = {
 const DEFAULT_INTERESTS: PlaceKind[] = ['food', 'culture', 'view']
 const ALLOWED_INTERESTS = new Set<PlaceKind>(DEFAULT_INTERESTS)
 
-function clampNumber(value: unknown, fallback: number, minimum: number, maximum: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+function clampOptionalNumber(value: unknown, minimum: number, maximum: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
   return Math.min(maximum, Math.max(minimum, Math.round(value)))
 }
 
@@ -40,19 +47,61 @@ function parseJson(content: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
-function normalizePlannerResponse(intent: string, value: Record<string, unknown>) {
+function normalizeAnswers(value: unknown): PlannerAnswers {
+  if (!value || typeof value !== 'object') return {}
+  const candidate = value as Record<string, unknown>
+  const duration = typeof candidate.duration === 'string' ? candidate.duration.trim().slice(0, 120) : undefined
+  const walking = typeof candidate.walking === 'string' ? candidate.walking.trim().slice(0, 120) : undefined
+  return {
+    availableMinutes: clampOptionalNumber(candidate.availableMinutes, 30, 720),
+    maxWalkMinutes: clampOptionalNumber(candidate.maxWalkMinutes, 5, 90),
+    ...(duration ? { duration } : {}),
+    ...(walking ? { walking } : {}),
+  }
+}
+
+function getPlannerPreferences(value: Record<string, unknown>, answers: PlannerAnswers): PlannerPreferences {
+  return {
+    availableMinutes: answers.availableMinutes ?? clampOptionalNumber(value.availableMinutes, 30, 720),
+    maxWalkMinutes: answers.maxWalkMinutes ?? clampOptionalNumber(value.maxWalkMinutes, 5, 90),
+  }
+}
+
+export function normalizePlannerResponse(
+  intent: string,
+  answers: PlannerAnswers,
+  value: Record<string, unknown>,
+): PlannerResponse {
   const interests = Array.isArray(value.interests)
     ? value.interests.filter((item): item is PlaceKind => typeof item === 'string' && ALLOWED_INTERESTS.has(item as PlaceKind))
     : []
+  const preferences = getPlannerPreferences(value, answers)
+  if (preferences.availableMinutes === undefined) {
+    return {
+      mode: 'clarification',
+      intent,
+      preferences,
+      nextQuestion: 'duration',
+    }
+  }
+  if (preferences.maxWalkMinutes === undefined) {
+    return {
+      mode: 'clarification',
+      intent,
+      preferences,
+      nextQuestion: 'walking',
+    }
+  }
+
   const request: TripRequest = {
     interests: interests.length ? [...new Set(interests)] : DEFAULT_INTERESTS,
-    availableMinutes: clampNumber(value.availableMinutes, 180, 30, 720),
-    maxWalkMinutes: clampNumber(value.maxWalkMinutes, 20, 5, 45),
-    stopCount: value.stopCount === 2 ? 2 : 3,
+    availableMinutes: preferences.availableMinutes,
+    maxWalkMinutes: preferences.maxWalkMinutes,
+    stopCount: value.stopCount === 2 || preferences.availableMinutes <= 90 ? 2 : 3,
   }
 
   return {
-    mode: 'llm',
+    mode: 'ready',
     intent,
     title: typeof value.title === 'string' && value.title.trim()
       ? value.title.trim().slice(0, 80)
@@ -60,6 +109,10 @@ function normalizePlannerResponse(intent: string, value: Record<string, unknown>
     explanation: typeof value.explanation === 'string' && value.explanation.trim()
       ? value.explanation.trim().slice(0, 240)
       : 'I will use your interests and walking limits to build a route with real places.',
+    preferences: {
+      availableMinutes: preferences.availableMinutes,
+      maxWalkMinutes: preferences.maxWalkMinutes,
+    },
     request,
   }
 }
@@ -84,7 +137,7 @@ function chatCompletionsUrl(value: string) {
   return baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`
 }
 
-async function createLlmPlan(intent: string) {
+async function createLlmPlan(intent: string, answers: PlannerAnswers) {
   const apiKey = process.env.LLM_API_KEY?.trim()
   const apiUrl = process.env.LLM_API_URL?.trim()
   const model = process.env.LLM_MODEL?.trim()
@@ -109,12 +162,17 @@ async function createLlmPlan(intent: string) {
             'You are Buki\'s trip-intent parser.',
             'Return only valid JSON with exactly these keys: title, explanation, interests, availableMinutes, maxWalkMinutes, stopCount.',
             'interests must use only food, culture, or view.',
-            'stopCount must be 2 or 3. Use defaults of 180 minutes, 20 walking minutes, and 3 stops when the user does not specify them.',
+            'stopCount must be 2 or 3.',
+            'Infer availableMinutes and maxWalkMinutes only when the person explicitly provides them in the intent or answers.',
+            'Use null for either field when it is missing or ambiguous. Never guess, default, or invent a duration or walking limit.',
             'Do not invent place names, addresses, opening hours, distances, coordinates, or geographic facts.',
             'The frontend will obtain geographic truth from Google Maps.',
           ].join(' '),
         },
-        { role: 'user', content: intent },
+        {
+          role: 'user',
+          content: `Intent: ${intent}\nKnown answers from the person: ${JSON.stringify(answers)}`,
+        },
       ],
     }),
   })
@@ -126,7 +184,7 @@ async function createLlmPlan(intent: string) {
   const payload = await providerResponse.json() as LlmPayload
   const content = contentFromLlm(payload)
   if (!content) throw new Error('The LLM provider returned no planning content.')
-  return normalizePlannerResponse(intent, parseJson(content))
+  return normalizePlannerResponse(intent, answers, parseJson(content))
 }
 
 export default async function handler(request: RequestLike, response: ResponseLike) {
@@ -144,7 +202,7 @@ export default async function handler(request: RequestLike, response: ResponseLi
   }
 
   try {
-    return response.status(200).json(await createLlmPlan(input.intent.trim()))
+    return response.status(200).json(await createLlmPlan(input.intent.trim(), normalizeAnswers(input.answers)))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'The LLM planner failed.'
     return response.status(502).json({ error: message })

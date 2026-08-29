@@ -23,6 +23,12 @@ interface RouteResult {
   route: google.maps.routes.Route
 }
 
+export type GoogleMapProgress =
+  | 'Searching nearby places'
+  | 'Checking nearby place details'
+  | 'Calculating a walkable route'
+  | 'Adding the route to your map'
+
 let configuredKey = ''
 let loadPromise: Promise<void> | null = null
 
@@ -45,6 +51,36 @@ const STOP_DURATION_MINUTES: Record<PlaceKind, number> = {
 }
 
 const DEFAULT_SEARCH_RADIUS_METERS = 1800
+
+export const MINIMUM_MAP_ZOOM = 3
+export const MAXIMUM_MAP_ZOOM = 20
+export const BUKI_MAP_BOUNDS: google.maps.LatLngBoundsLiteral = {
+  north: 85,
+  south: -85,
+  east: 180,
+  west: -180,
+}
+
+export function createBukiMapOptions(center: GeoPoint, mapId: string, zoom = 15): google.maps.MapOptions {
+  return {
+    center,
+    zoom: Math.max(MINIMUM_MAP_ZOOM, Math.min(MAXIMUM_MAP_ZOOM, zoom)),
+    mapId: mapId || 'DEMO_MAP_ID',
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: true,
+    zoomControl: true,
+    clickableIcons: false,
+    gestureHandling: 'greedy',
+    keyboardShortcuts: true,
+    minZoom: MINIMUM_MAP_ZOOM,
+    maxZoom: MAXIMUM_MAP_ZOOM,
+    restriction: {
+      latLngBounds: BUKI_MAP_BOUNDS,
+      strictBounds: true,
+    },
+  }
+}
 
 export async function loadGoogleMaps(apiKey: string) {
   if (!apiKey) throw new Error('GOOGLE_MAPS_KEY_MISSING')
@@ -76,16 +112,7 @@ export async function createGoogleMap(
 ): Promise<GoogleMapsController> {
   await loadGoogleMaps(apiKey)
 
-  const map = new google.maps.Map(container, {
-    center,
-    zoom,
-    mapId: mapId || 'DEMO_MAP_ID',
-    mapTypeControl: false,
-    streetViewControl: false,
-    fullscreenControl: false,
-    clickableIcons: false,
-    gestureHandling: 'greedy',
-  })
+  const map = new google.maps.Map(container, createBukiMapOptions(center, mapId, zoom))
 
   return {
     map,
@@ -253,7 +280,12 @@ async function fetchPlaceDetails(candidate: NearbyCandidate): Promise<TripPlace 
   }
 }
 
-async function searchFinalPlaces(origin: GeoPoint, request?: TripRequest): Promise<TripPlace[]> {
+async function searchFinalPlaces(
+  origin: GeoPoint,
+  request?: TripRequest,
+  onProgress?: (message: GoogleMapProgress) => void,
+): Promise<TripPlace[]> {
+  onProgress?.('Searching nearby places')
   const kinds = request?.interests.length ? request.interests : ['food', 'culture', 'view'] as PlaceKind[]
   const desiredStops = request?.stopCount ?? 3
   const candidateGroups = await Promise.all(
@@ -280,6 +312,7 @@ async function searchFinalPlaces(origin: GeoPoint, request?: TripRequest): Promi
     if (!addedCandidate) break
   }
 
+  onProgress?.('Checking nearby place details')
   const places = await Promise.all(finalists.map(fetchPlaceDetails))
   return places.filter((place): place is TripPlace => Boolean(place))
 }
@@ -359,15 +392,18 @@ export async function buildGoogleTripPlan(
   title: string,
   city: string,
   request?: TripRequest,
+  onProgress?: (message: GoogleMapProgress) => void,
 ): Promise<TripPlan> {
   if (!origin.coordinates) throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
 
-  const places = await searchFinalPlaces(origin.coordinates, request)
+  const places = await searchFinalPlaces(origin.coordinates, request, onProgress)
   if (places.length < 2) throw new Error('GOOGLE_MAPS_NOT_ENOUGH_PLACES')
 
   clearGoogleMapRoute(controller)
+  onProgress?.('Calculating a walkable route')
   const route = await computeWalkingRoute(origin.coordinates, places)
   assertRouteFitsRequest(route, places, request)
+  onProgress?.('Adding the route to your map')
   drawWalkingRoute(controller, route.route)
   const stops: TripStop[] = places.map((place, index) => ({
     id: place.id,

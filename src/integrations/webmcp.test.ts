@@ -56,6 +56,7 @@ describe('Buki WebMCP tools', () => {
     const names = BUKI_WEBMCP_TOOLS.map((tool) => tool.name)
     const search = getDefinition('search_nearby_places')
     const route = getDefinition('compute_walking_route')
+    const planWalk = getDefinition('plan_walk')
 
     expect(names).toContain('plan_walk')
     expect(names).not.toContain('propose_itinerary')
@@ -63,5 +64,7 @@ describe('Buki WebMCP tools', () => {
     expect(search.annotations).toEqual({ untrustedContentHint: true })
     expect(route.inputSchema.properties).toHaveProperty('toPlaceId')
     expect(route.inputSchema.properties).not.toHaveProperty('fromPlaceId')
+    expect(planWalk.inputSchema.properties).toHaveProperty('availableMinutes')
+    expect(planWalk.inputSchema.properties).toHaveProperty('maxWalkMinutes')
   })
 })

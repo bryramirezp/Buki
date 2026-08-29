@@ -1,8 +1,30 @@
 # Buki
 
-Buki turns “what can I do right now?” into a realistic, adaptable walking plan.
+**Turn “what should I do today?” into a real, walkable itinerary.**
 
-The product is designed to work in any city with coverage and data from the selected map provider. A person describes what they want to do, how much time they have, and how far they are willing to walk. Buki proposes real places and keeps the route inside the app; it reports unavailable places without inventing replacements.
+Buki starts with a real location and a natural-language idea—not a fictional route. It asks only for the details that make a plan practical, then uses Google Maps to find real nearby places and calculate a walking route.
+
+## The experience
+
+1. Choose your current location or drop a pin anywhere in the world.
+2. Describe what you would enjoy in your own words.
+3. Buki asks for time and walking comfort when they are missing.
+4. Create a plan built from real places and real walking routes.
+
+There are no hidden walking or time defaults. While Buki works, the page shows live activity: interpreting the request, finding places, checking details, calculating the route, and adding it to the map. These updates do not create extra Maps requests.
+
+The map behaves like an app, with direct pan and zoom, native zoom/fullscreen controls, and bounded global navigation that prevents empty or duplicated world views.
+
+## WebMCP: the same journey for an agent
+
+Buki exposes ten tools with `document.modelContext.registerTool`. A compatible browser agent can work with the person through the same visible experience:
+
+1. Call `set_origin` after the person approves a location.
+2. Call `plan_walk` with their intent. If duration or walking comfort is missing, it returns `needs_clarification` instead of querying Maps.
+3. Call `plan_walk` again with `availableMinutes` and `maxWalkMinutes` once the person answers.
+4. Read and guide the visible itinerary with `get_itinerary`, `get_place_status`, `compute_walking_route`, `focus_stop`, and `advance_to_next_stop`.
+
+`search_nearby_places` only works after Buki has the person’s planning preferences, so an agent cannot create a route with invisible limits. The **WebMCP · 10 tools** button opens an in-app inspector with the browser-registered schemas and recent calls.
 
 ## Run locally
 
@@ -11,49 +33,29 @@ npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env` and fill in the values you need. Never commit `.env` or expose server-side secrets with a `VITE_` prefix.
-
-`npm run dev` runs the Vite interface and a local adapter for `/api/plan` using the same LLM function that Vercel deploys. It reads the server-only `LLM_*` variables from `.env`; no Vercel login or CLI is required for local planning. Leave `VITE_BUKI_API_URL` empty locally; set it to the deployment origin only in production.
-
-## Project documents
-
-- [`BUKI_PRODUCT_CONTRACT.md`](./BUKI_PRODUCT_CONTRACT.md): product promise, user, boundaries, and success criteria.
-- [`BUKI_BUILD_PLAN.md`](./BUKI_BUILD_PLAN.md): phases, architecture, verification, and stop rule.
-- [`PRIOR_WORK.md`](./PRIOR_WORK.md): prior-work boundary and dated challenge-period evidence.
-- [`RULES.md`](./RULES.md): English summary of the WebMCP challenge rules.
-
-## Current state
-
-Buki starts with no fictional location or itinerary: a person selects their device location or drops a point anywhere on the map, the LLM interprets their intent, and Google Maps supplies the real places and walking route. A compatible agent can perform that same end-to-end flow through ten WebMCP tools, with every plan change visible in the page.
-
-## Configuration
+Copy `.env.example` to `.env` and fill in your values. `npm run dev` serves the Vite interface and a local adapter for `/api/plan`; no Vercel CLI or login is needed.
 
 ```text
-VITE_BUKI_API_URL=
 VITE_GOOGLE_MAPS_API_KEY=
 VITE_GOOGLE_MAPS_MAP_ID=
+VITE_BUKI_API_URL=
 
-# Server-side only; never use VITE_ for these values.
+# Server-side only. Never give these variables a VITE_ prefix.
 BUKI_MODE=real
 LLM_API_KEY=
 LLM_API_URL=
 LLM_MODEL=
 ```
 
-The app lives at the repository root so Vercel can detect the Vite project without a custom root-directory setting.
+The Google Maps JavaScript key is browser-visible by design, so restrict it by HTTP referrer and only enable the Maps APIs Buki uses. The LLM key remains server-side.
 
-Advanced Google Maps markers require a Map ID. Create one in the same Google Cloud project and set `VITE_GOOGLE_MAPS_MAP_ID`; the documented `DEMO_MAP_ID` fallback is used only when this variable is empty during local testing.
+## Deploy to Vercel
 
-## WebMCP
+Import this repository with the root directory set to `.`. Vercel detects the Vite app and deploys `api/plan.ts` as a Vercel Function automatically. Configure the variables above in Vercel; keep `LLM_API_KEY`, `LLM_API_URL`, and `LLM_MODEL` secret. Set `VITE_BUKI_API_URL` to empty when the function is served from the same deployment.
 
-Buki registers ten tools through `document.modelContext.registerTool`. The “WebMCP · 10 tools” button opens an in-app inspector showing browser-registered schemas, annotations, and recent calls. In a browser without WebMCP, the definitions remain visible and manual controls continue to work.
+## Project documents
 
-## Agent journey
-
-An agent and person can collaborate without reproducing the plan manually:
-
-1. `set_origin` places the route at a person-approved latitude and longitude.
-2. `plan_walk` interprets the person’s natural-language request with the LLM, queries Google Maps, and makes the real plan visible in Buki.
-3. The agent can inspect it with `get_itinerary`, focus a stop, read its status, or advance to the next leg.
-
-Tools returning place-provider text are marked as third-party content. Tools that change the visible plan are not marked read-only.
+- [Product contract](./BUKI_PRODUCT_CONTRACT.md)
+- [Build plan](./BUKI_BUILD_PLAN.md)
+- [WebMCP challenge rules](./RULES.md)
+- [Prior-work boundary](./PRIOR_WORK.md)

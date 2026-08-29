@@ -1,34 +1,41 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { WebMcpInspector } from './components/WebMcpInspector'
-import type { GoogleMapsController } from './integrations/googleMaps'
+import type { GoogleMapProgress, GoogleMapsController } from './integrations/googleMaps'
 import {
   buildGoogleTripPlan,
   clearGoogleMapRoute,
+  MINIMUM_MAP_ZOOM,
   createGoogleMap,
   describeGoogleMapPoint,
   enableGoogleMapPointSelection,
   moveGoogleMap,
   updateGoogleMapMarkers,
 } from './integrations/googleMaps'
-import type { GeoPoint, PlaceKind, TripLocation, TripPlace, TripPlan, TripRequest, TripStop } from './types'
+import type {
+  GeoPoint,
+  PlaceKind,
+  PlannerAnswers,
+  PlannerClarificationResponse,
+  PlannerQuestion,
+  PlannerReadyResponse,
+  PlannerResponse,
+  TripLocation,
+  TripPlace,
+  TripPlan,
+  TripRequest,
+  TripStop,
+} from './types'
 import { useWebMcp } from './hooks/useWebMcp'
 import type { BukiWebMcpActions } from './integrations/webmcp'
 
 type MapState = 'loading' | 'ready' | 'error' | 'unavailable'
 type LocationState = 'idle' | 'picking' | 'requesting' | 'resolving' | 'selected' | 'denied' | 'unsupported'
 type OriginMethod = 'device' | 'map' | 'agent' | null
-
-interface PlannerResponse {
-  mode: 'llm'
-  intent: string
-  title: string
-  explanation: string
-  request: TripRequest
-}
+type PlanningActivity = { label: string; state: 'active' | 'complete' }
 
 const DEFAULT_INTENT = ''
 const DEFAULT_MAP_CENTER: GeoPoint = { lat: 20, lng: 0 }
-const DEFAULT_MAP_ZOOM = 2
+const DEFAULT_MAP_ZOOM = MINIMUM_MAP_ZOOM
 const SELECTED_POINT_ZOOM = 15
 
 const KIND_LABELS = {
@@ -42,6 +49,19 @@ const KIND_SYMBOLS = {
   culture: '◇',
   view: '△',
 } as const
+
+const DURATION_OPTIONS = [
+  { label: '30 minutes', value: 30 },
+  { label: '1 hour', value: 60 },
+  { label: '2 hours', value: 120 },
+  { label: 'All afternoon', value: 240 },
+] as const
+
+const WALKING_OPTIONS = [
+  { label: 'Keep it very short', value: 10 },
+  { label: 'A relaxed walk', value: 20 },
+  { label: 'I’m happy to walk more', value: 40 },
+] as const
 
 const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
 const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? ''
@@ -77,14 +97,25 @@ function getPlannerErrorMessage(error: unknown) {
 function isPlannerResponse(value: unknown): value is PlannerResponse {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
+  const preferences = candidate.preferences
+  if (!preferences || typeof preferences !== 'object' || typeof candidate.intent !== 'string') return false
+  const parsedPreferences = preferences as Record<string, unknown>
+  if (candidate.mode === 'clarification') {
+    return (
+      (candidate.nextQuestion === 'duration' || candidate.nextQuestion === 'walking') &&
+      (parsedPreferences.availableMinutes === undefined || typeof parsedPreferences.availableMinutes === 'number') &&
+      (parsedPreferences.maxWalkMinutes === undefined || typeof parsedPreferences.maxWalkMinutes === 'number')
+    )
+  }
   const request = candidate.request
   if (!request || typeof request !== 'object') return false
   const parsedRequest = request as Record<string, unknown>
   return (
-    candidate.mode === 'llm' &&
-    typeof candidate.intent === 'string' &&
+    candidate.mode === 'ready' &&
     typeof candidate.title === 'string' &&
     typeof candidate.explanation === 'string' &&
+    typeof parsedPreferences.availableMinutes === 'number' &&
+    typeof parsedPreferences.maxWalkMinutes === 'number' &&
     Array.isArray(parsedRequest.interests) &&
     typeof parsedRequest.availableMinutes === 'number' &&
     typeof parsedRequest.maxWalkMinutes === 'number' &&
@@ -110,6 +141,23 @@ function searchRadiusFromToolInput(input: Record<string, unknown>) {
   return Math.round(radiusMeters)
 }
 
+function plannerAnswersFromToolInput(input: Record<string, unknown>): PlannerAnswers {
+  const answers: PlannerAnswers = {}
+  if (input.availableMinutes !== undefined) {
+    if (typeof input.availableMinutes !== 'number' || !Number.isFinite(input.availableMinutes) || input.availableMinutes < 30 || input.availableMinutes > 720) {
+      throw new Error('VALID_AVAILABLE_MINUTES_REQUIRED')
+    }
+    answers.availableMinutes = Math.round(input.availableMinutes)
+  }
+  if (input.maxWalkMinutes !== undefined) {
+    if (typeof input.maxWalkMinutes !== 'number' || !Number.isFinite(input.maxWalkMinutes) || input.maxWalkMinutes < 5 || input.maxWalkMinutes > 90) {
+      throw new Error('VALID_MAX_WALK_MINUTES_REQUIRED')
+    }
+    answers.maxWalkMinutes = Math.round(input.maxWalkMinutes)
+  }
+  return answers
+}
+
 function App() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const googleMapRef = useRef<GoogleMapsController | null>(null)
@@ -119,11 +167,16 @@ function App() {
   const [locationState, setLocationState] = useState<LocationState>('idle')
   const [originMethod, setOriginMethod] = useState<OriginMethod>(null)
   const [plannerRequest, setPlannerRequest] = useState<TripRequest | null>(null)
+  const [plannerAnswers, setPlannerAnswers] = useState<PlannerAnswers>({})
+  const [clarification, setClarification] = useState<PlannerClarificationResponse | null>(null)
+  const [readyPlanner, setReadyPlanner] = useState<PlannerReadyResponse | null>(null)
+  const [customAnswer, setCustomAnswer] = useState('')
   const [isPlanning, setIsPlanning] = useState(false)
   const [intent, setIntent] = useState(DEFAULT_INTENT)
   const [origin, setOrigin] = useState<TripLocation | null>(null)
   const [plan, setPlan] = useState<TripPlan | null>(null)
   const [activeStopIndex, setActiveStopIndex] = useState(0)
+  const [planningActivity, setPlanningActivity] = useState<PlanningActivity[]>([])
   const [notice, setNotice] = useState('')
   const [mapError, setMapError] = useState('')
   const [inspectorOpen, setInspectorOpen] = useState(false)
@@ -275,17 +328,35 @@ function App() {
     )
   }
 
-  async function fetchRealPlan(request = plannerRequest ?? undefined, title = plan?.title ?? 'A walk near your starting point') {
-    if (!origin) throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
-    const controller = await ensureGoogleMap(origin.coordinates, SELECTED_POINT_ZOOM)
-    return buildGoogleTripPlan(controller, origin, title, origin.detail, request)
+  function beginPlanningActivity(label: string) {
+    setPlanningActivity([{ label, state: 'active' }])
   }
 
-  async function requestLlmPlan(nextIntent: string): Promise<PlannerResponse> {
+  function advancePlanningActivity(label: GoogleMapProgress) {
+    setPlanningActivity((current) => {
+      if (current.at(-1)?.label === label) return current
+      return [...current.map((item) => ({ ...item, state: 'complete' as const })), { label, state: 'active' }]
+    })
+  }
+
+  function finishPlanningActivity() {
+    setPlanningActivity([])
+  }
+
+  async function fetchRealPlan(
+    request = plannerRequest ?? undefined,
+    title = plan?.title ?? 'A walk near your starting point',
+  ) {
+    if (!origin) throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
+    const controller = await ensureGoogleMap(origin.coordinates, SELECTED_POINT_ZOOM)
+    return buildGoogleTripPlan(controller, origin, title, origin.detail, request, advancePlanningActivity)
+  }
+
+  async function requestLlmPlan(nextIntent: string, answers: PlannerAnswers): Promise<PlannerResponse> {
     const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/plan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent: nextIntent }),
+      body: JSON.stringify({ intent: nextIntent, answers }),
     })
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
@@ -300,47 +371,120 @@ function App() {
 
   async function submitIntent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const nextIntent = intent.trim()
     try {
-      await buildPlanFromIntent(nextIntent)
+      if (readyPlanner) {
+        await createRealPlan(readyPlanner)
+      } else if (clarification) {
+        if (!customAnswer.trim()) {
+          setNotice('Choose an option or write your own answer to continue.')
+          return
+        }
+        await answerClarification(clarification.nextQuestion, customAnswer.trim())
+      } else {
+        await preparePlanFromIntent(intent.trim(), {})
+      }
     } catch {
       // The shared planner already reports a visible, actionable error message.
     }
   }
 
-  async function buildPlanFromIntent(nextIntent: string) {
+  function clearDraftRoute() {
+    if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
+    setPlan(null)
+    setActiveStopIndex(0)
+  }
+
+  async function preparePlanFromIntent(nextIntent: string, answers: PlannerAnswers): Promise<PlannerResponse> {
     if (!nextIntent) {
       setNotice('Tell Buki what you would like to do.')
       throw new Error('INTENT_REQUIRED')
     }
     if (!origin) {
-      setNotice('Choose your current location or a point on the map before building a route.')
+      setNotice('Choose your current location or a point on the map before shaping a route.')
       throw new Error('ORIGIN_REQUIRED')
-    }
-    if (!mapsApiKey) {
-      setNotice('Configure a Google Maps key before building a route.')
-      throw new Error('GOOGLE_MAPS_KEY_MISSING')
     }
 
     setIsPlanning(true)
-    setNotice('Interpreting your request…')
+    setNotice('Buki is shaping your plan…')
+    beginPlanningActivity('Buki is interpreting your request')
+    clearDraftRoute()
     try {
-      const planner = await requestLlmPlan(nextIntent)
-      setPlannerRequest(planner.request)
+      const planner = await requestLlmPlan(nextIntent, answers)
       setIntent(planner.intent)
-      setNotice('Finding real places and calculating the walking route…')
-      if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
-      setPlan(null)
-      const realPlan = await fetchRealPlan(planner.request, planner.title)
-      setPlan(realPlan)
-      setActiveStopIndex(0)
-      setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
-      return { planner, realPlan }
+      setPlannerAnswers({ ...answers, ...planner.preferences })
+      if (planner.mode === 'clarification') {
+        setClarification(planner)
+        setReadyPlanner(null)
+        setPlannerRequest(null)
+        setNotice(planner.nextQuestion === 'duration'
+          ? 'One detail to shape your plan: how much time do you have?'
+          : 'One more thing for a comfortable route: how much walking feels right today?')
+        return planner
+      }
+
+      setClarification(null)
+      setReadyPlanner(planner)
+      setPlannerRequest(planner.request)
+      setNotice('Your plan is shaped. Create it when you are ready to find real places and routes.')
+      return planner
     } catch (error) {
       setNotice(getPlannerErrorMessage(error))
       throw error
     } finally {
       setIsPlanning(false)
+      finishPlanningActivity()
+    }
+  }
+
+  async function answerClarification(question: PlannerQuestion, answer: number | string) {
+    const nextAnswers: PlannerAnswers = { ...plannerAnswers }
+    if (question === 'duration') {
+      delete nextAnswers.duration
+      if (typeof answer === 'number') {
+        nextAnswers.availableMinutes = answer
+      } else {
+        delete nextAnswers.availableMinutes
+        nextAnswers.duration = answer
+      }
+    } else {
+      delete nextAnswers.walking
+      if (typeof answer === 'number') {
+        nextAnswers.maxWalkMinutes = answer
+      } else {
+        delete nextAnswers.maxWalkMinutes
+        nextAnswers.walking = answer
+      }
+    }
+    setCustomAnswer('')
+    await preparePlanFromIntent(intent.trim(), nextAnswers)
+  }
+
+  async function createRealPlan(planner: PlannerReadyResponse) {
+    if (!origin) {
+      setNotice('Choose your current location or a point on the map before creating a route.')
+      throw new Error('ORIGIN_REQUIRED')
+    }
+    if (!mapsApiKey) {
+      setNotice('Configure a Google Maps key before creating a real route.')
+      throw new Error('GOOGLE_MAPS_KEY_MISSING')
+    }
+
+    setIsPlanning(true)
+    setNotice('Finding real places and calculating the walking route…')
+    beginPlanningActivity('Looking for real places near your starting point')
+    clearDraftRoute()
+    try {
+      const realPlan = await fetchRealPlan(planner.request, planner.title)
+      setPlan(realPlan)
+      setActiveStopIndex(0)
+      setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
+      return realPlan
+    } catch (error) {
+      setNotice(getPlannerErrorMessage(error))
+      throw error
+    } finally {
+      setIsPlanning(false)
+      finishPlanningActivity()
     }
   }
 
@@ -392,8 +536,17 @@ function App() {
 
   function serializePlan() {
     if (plan) return serializePlanData(plan)
+    if (clarification) {
+      return {
+        status: 'needs_clarification',
+        intent: clarification.intent,
+        preferences: clarification.preferences,
+        nextQuestion: clarification.nextQuestion,
+        stops: [],
+      }
+    }
     return {
-      status: origin ? 'ready_to_plan' : 'needs_origin',
+      status: readyPlanner ? 'ready_to_create' : origin ? 'ready_to_plan' : 'needs_origin',
       origin: origin ? { id: origin.id, name: origin.name, detail: origin.detail } : null,
       stops: [],
     }
@@ -408,6 +561,12 @@ function App() {
     async searchNearbyPlaces(input) {
       if (!origin) throw new Error('ORIGIN_REQUIRED')
       if (!mapsApiKey) throw new Error('GOOGLE_MAPS_KEY_MISSING')
+      if (!plannerRequest) {
+        return {
+          status: 'needs_clarification',
+          message: 'Use plan_walk with the person’s intent and preferences before searching for a route.',
+        }
+      }
       const requestedKind = input.kind === undefined
         ? undefined
         : typeof input.kind === 'string' && ['food', 'culture', 'view'].includes(input.kind)
@@ -415,11 +574,12 @@ function App() {
           : (() => { throw new Error('VALID_PLACE_KIND_REQUIRED') })()
       const radiusMeters = searchRadiusFromToolInput(input)
       const request: TripRequest = {
-        ...(plannerRequest ?? { interests: ['food', 'culture', 'view'], availableMinutes: 180, maxWalkMinutes: 20, stopCount: 3 }),
+        ...plannerRequest,
         ...(requestedKind ? { interests: [requestedKind] } : {}),
         ...(radiusMeters ? { searchRadiusMeters: radiusMeters } : {}),
       }
       setNotice('An agent is building a new real nearby route…')
+      beginPlanningActivity('Looking for real places near your starting point')
       if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
       setPlan(null)
       try {
@@ -431,6 +591,8 @@ function App() {
         const message = getGoogleErrorMessage(error)
         setNotice(message)
         throw new Error(message)
+      } finally {
+        finishPlanningActivity()
       }
     },
     getPlaceStatus(input) {
@@ -453,7 +615,16 @@ function App() {
     getItinerary: serializePlan,
     async planWalk(input) {
       const requestedIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
-      const { planner, realPlan } = await buildPlanFromIntent(requestedIntent)
+      const planner = await preparePlanFromIntent(requestedIntent, plannerAnswersFromToolInput(input))
+      if (planner.mode === 'clarification') {
+        return {
+          status: 'needs_clarification',
+          intent: planner.intent,
+          preferences: planner.preferences,
+          nextQuestion: planner.nextQuestion,
+        }
+      }
+      const realPlan = await createRealPlan(planner)
       return {
         status: 'ok',
         intent: planner.intent,
@@ -480,6 +651,10 @@ function App() {
       const nextIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
       if (!nextIntent) throw new Error('INTENT_REQUIRED')
       setIntent(nextIntent)
+      setPlannerAnswers({})
+      setClarification(null)
+      setReadyPlanner(null)
+      setPlannerRequest(null)
       setNotice('Intent updated by an agent. It has not built a route yet.')
       return { status: 'ok', intent: nextIntent, planUpdated: false }
     },
@@ -492,6 +667,8 @@ function App() {
         webmcp: Boolean(document.modelContext),
         mapSource: plan?.source ?? 'pending',
         origin: origin?.name ?? null,
+        preferences: readyPlanner?.preferences ?? clarification?.preferences ?? plannerAnswers,
+        nextQuestion: clarification?.nextQuestion ?? null,
         stopCount: stops.length,
         manualControlsAvailable: true,
       }
@@ -499,6 +676,26 @@ function App() {
   }
 
   const webmcp = useWebMcp(webMcpActions)
+
+  const plannerSubmitLabel = isPlanning
+    ? readyPlanner ? 'Creating your walk…' : 'Buki is thinking…'
+    : plan ? 'Walk created'
+      : readyPlanner ? 'Create my walk'
+        : clarification ? 'Continue with this answer'
+          : 'Continue when ready'
+
+  function updateIntentDraft(nextIntent: string) {
+    setIntent(nextIntent)
+    if (clarification || readyPlanner || Object.keys(plannerAnswers).length) {
+      setPlannerAnswers({})
+      setClarification(null)
+      setReadyPlanner(null)
+      setPlannerRequest(null)
+      setCustomAnswer('')
+      clearDraftRoute()
+      setNotice('Your request changed. Continue when you are ready and Buki will shape it again.')
+    }
+  }
 
   return (
     <main className={`app-shell ${mapState === 'ready' ? 'has-real-map' : ''}`}>
@@ -587,17 +784,87 @@ function App() {
                 <span className="planner-step-number" aria-hidden="true">2</span>
                 <h2 id="intent-title">What would you enjoy?</h2>
               </div>
-              <label className="intent-input" htmlFor="intent">
-                <textarea id="intent" value={intent} onChange={(event) => setIntent(event.target.value)} rows={2} aria-label="What would you enjoy?" />
-              </label>
+              {clarification || readyPlanner ? (
+                <div className="captured-intent">
+                  <span aria-hidden="true">●</span>
+                  <p>{intent}</p>
+                  <button type="button" onClick={() => updateIntentDraft(intent)} aria-label="Edit your request">Edit</button>
+                </div>
+              ) : (
+                <label className="intent-input" htmlFor="intent">
+                  <textarea id="intent" value={intent} onChange={(event) => updateIntentDraft(event.target.value)} rows={2} aria-label="What would you enjoy?" />
+                </label>
+              )}
+
+              {(plannerAnswers.availableMinutes || plannerAnswers.maxWalkMinutes) && (
+                <div className="preference-summary" aria-label="Your plan preferences">
+                  {plannerAnswers.availableMinutes && <span>◷ {plannerAnswers.availableMinutes >= 60 ? `${plannerAnswers.availableMinutes / 60} ${plannerAnswers.availableMinutes === 60 ? 'hour' : 'hours'}` : `${plannerAnswers.availableMinutes} minutes`}</span>}
+                  {plannerAnswers.maxWalkMinutes && <span>♧ {plannerAnswers.maxWalkMinutes} min max per walk</span>}
+                </div>
+              )}
+
+              {clarification && (
+                <div className="clarification-card" aria-live="polite">
+                  <p className="clarification-kicker">{clarification.nextQuestion === 'duration' ? 'One detail to shape your plan' : 'One more thing for a comfortable route'}</p>
+                  <h3>{clarification.nextQuestion === 'duration' ? 'How much time would you like to spend?' : 'How much walking feels comfortable today?'}</h3>
+                  <div className="clarification-options">
+                    {(clarification.nextQuestion === 'duration' ? DURATION_OPTIONS : WALKING_OPTIONS).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className="clarification-option"
+                        onClick={() => void answerClarification(clarification.nextQuestion, option.value)}
+                        disabled={isPlanning}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="custom-answer" htmlFor="custom-answer">
+                    <span>{clarification.nextQuestion === 'duration' ? 'Or write your own answer' : 'Or tell Buki your limit'}</span>
+                    <input
+                      id="custom-answer"
+                      value={customAnswer}
+                      onChange={(event) => setCustomAnswer(event.target.value)}
+                      placeholder={clarification.nextQuestion === 'duration' ? 'For example, 90 minutes' : 'For example, no more than 15 minutes per walk'}
+                      aria-label={clarification.nextQuestion === 'duration' ? 'Your available time' : 'Your walking limit'}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {readyPlanner && (
+                <p className="planner-ready-message"><span aria-hidden="true">✧</span> Your day is shaped around you. Create it when you are ready.</p>
+              )}
             </section>
 
-            <button className="primary-button planner-submit" type="submit" disabled={isPlanning}>
+            <button className="primary-button planner-submit" type="submit" disabled={isPlanning || Boolean(plan)}>
               <span className="planner-submit-number" aria-hidden="true">3</span>
-              <span>{isPlanning ? 'Creating your walk…' : 'Create my walk'}</span>
+              <span>{plannerSubmitLabel}</span>
               <span className="planner-submit-icon" aria-hidden="true">↗</span>
             </button>
           </form>
+
+          {planningActivity.length > 0 && (
+            <section className="planning-activity" aria-label="Live planning activity" aria-live="polite">
+              <div className="planning-activity-header">
+                <span className="planning-orb" aria-hidden="true"><i /><i /><i /></span>
+                <div>
+                  <p>Live activity</p>
+                  <strong>{planningActivity.at(-1)?.label}</strong>
+                </div>
+              </div>
+              <ol className="planning-activity-log">
+                {planningActivity.map((item) => (
+                  <li key={item.label} className={`is-${item.state}`}>
+                    <span aria-hidden="true">{item.state === 'complete' ? '✓' : ''}</span>
+                    {item.label}
+                  </li>
+                ))}
+              </ol>
+              <p className="planning-activity-note">Buki will keep this updated while it works.</p>
+            </section>
+          )}
 
           {!plan && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> We'll find real places and walking routes.</p>}
 
