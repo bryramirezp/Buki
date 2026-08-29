@@ -24,11 +24,23 @@ function formatTime(timestamp: string) {
   return new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function schemaFields(schema: WebMcpToolDefinition['inputSchema']) {
-  const properties = schema.properties
+function schemaFields(schema: unknown) {
+  if (!schema || typeof schema !== 'object') return 'Schema unavailable'
+  const properties = (schema as { properties?: unknown }).properties
   if (!properties || typeof properties !== 'object') return 'No parameters'
   const fields = Object.keys(properties)
   return fields.length ? fields.map((field) => ` ${field}`).join(' ·') : 'No parameters'
+}
+
+function registeredSchema(tool: RegisteredTool | undefined) {
+  if (!tool?.inputSchema) return undefined
+  if (typeof tool.inputSchema !== 'string') return tool.inputSchema
+  try {
+    const parsed: unknown = JSON.parse(tool.inputSchema)
+    return parsed && typeof parsed === 'object' ? parsed : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function WebMcpInspector({
@@ -42,7 +54,7 @@ export function WebMcpInspector({
 }: WebMcpInspectorProps) {
   if (!open) return null
 
-  const registeredNames = new Set(registeredTools.map((tool) => tool.name))
+  const registeredByName = new Map(registeredTools.map((tool) => [tool.name, tool]))
 
   return (
     <div className="webmcp-overlay" role="presentation" onClick={onClose}>
@@ -70,7 +82,10 @@ export function WebMcpInspector({
 
         <div className="webmcp-tool-list">
           {definitions.map((tool) => {
-            const registered = registeredNames.has(tool.name)
+            const registeredTool = registeredByName.get(tool.name)
+            const registered = Boolean(registeredTool)
+            const schema = registeredSchema(registeredTool) ?? tool.inputSchema
+            const annotations = registeredTool?.annotations ?? tool.annotations
             return (
               <article className={`webmcp-tool-card ${registered ? 'is-registered' : ''}`} key={tool.name}>
                 <div className="webmcp-tool-topline">
@@ -82,8 +97,9 @@ export function WebMcpInspector({
                 <h3>{tool.title}</h3>
                 <p>{tool.description}</p>
                 <div className="webmcp-tool-meta">
-                  <span>Parameters:{schemaFields(tool.inputSchema)}</span>
-                  {tool.annotations?.readOnlyHint && <span className="webmcp-readonly">Read-only</span>}
+                  <span>{registered ? 'Browser parameters:' : 'Local parameters:'}{schemaFields(schema)}</span>
+                  {annotations?.readOnlyHint && <span className="webmcp-readonly">Read-only</span>}
+                  {annotations?.untrustedContentHint && <span>Third-party content</span>}
                 </div>
               </article>
             )

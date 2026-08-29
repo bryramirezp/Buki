@@ -45,6 +45,7 @@ const KIND_SYMBOLS = {
 
 const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
 const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? ''
+const mapsMapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim() ?? ''
 
 function formatDistance(meters: number) {
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${meters} m`
@@ -59,7 +60,7 @@ function getGoogleErrorMessage(error: unknown) {
     if (error.message === 'GOOGLE_MAPS_KEY_MISSING') return 'Configure a Google Maps key to build a real route.'
     if (error.message === 'GOOGLE_MAPS_NOT_ENOUGH_PLACES') return 'Google Maps did not find enough nearby places to build the route.'
     if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_WALK_LIMIT') return 'The available places do not fit your maximum walking time per leg.'
-    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT') return 'The available places do not fit your available time.'
+    if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT') return 'The available places do not fit your available time once walking and stop time are included.'
     if (error.message.includes('REQUEST_DENIED') || error.message.includes('ApiNotActivated')) {
       return 'Google Maps rejected the request. Check enabled APIs, restrictions, and key billing.'
     }
@@ -100,6 +101,15 @@ function pointFromToolInput(input: Record<string, unknown>): GeoPoint | null {
   return { lat: latitude, lng: longitude }
 }
 
+function searchRadiusFromToolInput(input: Record<string, unknown>) {
+  if (input.radiusMeters === undefined) return undefined
+  const radiusMeters = input.radiusMeters
+  if (typeof radiusMeters !== 'number' || !Number.isFinite(radiusMeters) || radiusMeters < 100 || radiusMeters > 50000) {
+    throw new Error('VALID_RADIUS_METERS_REQUIRED')
+  }
+  return Math.round(radiusMeters)
+}
+
 function App() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const googleMapRef = useRef<GoogleMapsController | null>(null)
@@ -128,7 +138,7 @@ function App() {
     if (!mapContainerRef.current) throw new Error('GOOGLE_MAPS_CONTAINER_MISSING')
 
     setMapState('loading')
-    const initialization = createGoogleMap(mapContainerRef.current, center, mapsApiKey, zoom)
+    const initialization = createGoogleMap(mapContainerRef.current, center, mapsApiKey, mapsMapId, zoom)
       .then((controller) => {
         googleMapRef.current = controller
         enableGoogleMapPointSelection(controller, (coordinates) => {
@@ -168,6 +178,7 @@ function App() {
     ? availableStops[Math.min(activeStopIndex, availableStops.length - 1)]
     : undefined
   const totalWalkingMinutes = plan?.totalWalkingMinutes ?? 0
+  const totalEstimatedMinutes = plan?.totalEstimatedMinutes ?? 0
   const mapLabel = mapState === 'ready'
     ? plan ? 'Google Maps · real route' : 'Google Maps ready'
     : mapState === 'loading'
@@ -271,7 +282,7 @@ function App() {
 
     setRealPlanState('loading')
     setNotice('Querying places, opening hours, and walking route…')
-    clearGoogleMapRoute(googleMapRef.current!)
+    if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
     setPlan(null)
     try {
       const realPlan = await fetchRealPlan()
@@ -307,17 +318,25 @@ function App() {
   async function submitIntent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const nextIntent = intent.trim()
+    try {
+      await buildPlanFromIntent(nextIntent)
+    } catch {
+      // The shared planner already reports a visible, actionable error message.
+    }
+  }
+
+  async function buildPlanFromIntent(nextIntent: string) {
     if (!nextIntent) {
       setNotice('Tell Buki what you would like to do.')
-      return
+      throw new Error('INTENT_REQUIRED')
     }
     if (!origin) {
       setNotice('Choose your current location or a point on the map before building a route.')
-      return
+      throw new Error('ORIGIN_REQUIRED')
     }
     if (!mapsApiKey) {
       setNotice('Configure a Google Maps key before building a route.')
-      return
+      throw new Error('GOOGLE_MAPS_KEY_MISSING')
     }
 
     setIsPlanning(true)
@@ -328,16 +347,18 @@ function App() {
       setIntent(planner.intent)
       setRealPlanState('loading')
       setNotice('Finding real places and calculating the walking route…')
-      clearGoogleMapRoute(googleMapRef.current!)
+      if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
       setPlan(null)
       const realPlan = await fetchRealPlan(planner.request, planner.title)
       setPlan(realPlan)
       setActiveStopIndex(0)
       setRealPlanState('ready')
       setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
+      return { planner, realPlan }
     } catch (error) {
       setRealPlanState('error')
       setNotice(getPlannerErrorMessage(error))
+      throw error
     } finally {
       setIsPlanning(false)
     }
@@ -346,15 +367,23 @@ function App() {
   function moveToNextStop() {
     if (!availableStops.length) {
       setNotice('Build a real route before starting a leg.')
-      return
+      return { status: 'needs_plan' as const, nextStop: null }
     }
     if (activeStopIndex >= availableStops.length - 1) {
       setNotice('You reached the end of the route. You can return to any stop in the plan.')
-      return
+      return {
+        status: 'complete' as const,
+        nextStop: availableStops[activeStopIndex] ? {
+          id: availableStops[activeStopIndex].id,
+          name: availableStops[activeStopIndex].place.name,
+        } : null,
+      }
     }
     const nextIndex = activeStopIndex + 1
+    const nextStop = availableStops[nextIndex]
     setActiveStopIndex(nextIndex)
-    setNotice(`Next: ${availableStops[nextIndex].place.name}.`)
+    setNotice(`Next: ${nextStop.place.name}.`)
+    return { status: 'ok' as const, nextStop: { id: nextStop.id, name: nextStop.place.name } }
   }
 
   function serializePlanData(currentPlan: TripPlan) {
@@ -366,6 +395,7 @@ function App() {
       checkedAt: currentPlan.checkedAt,
       origin: { id: currentPlan.origin.id, name: currentPlan.origin.name, detail: currentPlan.origin.detail },
       totalWalkingMinutes: currentPlan.totalWalkingMinutes,
+      totalEstimatedMinutes: currentPlan.totalEstimatedMinutes,
       stops: currentPlan.stops.map((stop) => ({
         id: stop.place.id,
         sequence: stop.sequence,
@@ -396,14 +426,23 @@ function App() {
 
   const webMcpActions: BukiWebMcpActions = {
     async searchNearbyPlaces(input) {
-      if (!origin) return { status: 'needs_origin', message: 'The person must select a real starting point first.' }
-      if (!mapsApiKey) return { status: 'unavailable', message: 'Google Maps is not configured.' }
-      const requestedKind = typeof input.kind === 'string' && ['food', 'culture', 'view'].includes(input.kind)
-        ? input.kind as PlaceKind
-        : undefined
-      const request = requestedKind
-        ? { ...(plannerRequest ?? { availableMinutes: 180, maxWalkMinutes: 20, stopCount: 3 }), interests: [requestedKind] as PlaceKind[] }
-        : plannerRequest ?? undefined
+      if (!origin) throw new Error('ORIGIN_REQUIRED')
+      if (!mapsApiKey) throw new Error('GOOGLE_MAPS_KEY_MISSING')
+      const requestedKind = input.kind === undefined
+        ? undefined
+        : typeof input.kind === 'string' && ['food', 'culture', 'view'].includes(input.kind)
+          ? input.kind as PlaceKind
+          : (() => { throw new Error('VALID_PLACE_KIND_REQUIRED') })()
+      const radiusMeters = searchRadiusFromToolInput(input)
+      const request: TripRequest = {
+        ...(plannerRequest ?? { interests: ['food', 'culture', 'view'], availableMinutes: 180, maxWalkMinutes: 20, stopCount: 3 }),
+        ...(requestedKind ? { interests: [requestedKind] } : {}),
+        ...(radiusMeters ? { searchRadiusMeters: radiusMeters } : {}),
+      }
+      setRealPlanState('loading')
+      setNotice('An agent is building a new real nearby route…')
+      if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
+      setPlan(null)
       try {
         const realPlan = await fetchRealPlan(request)
         setPlan(realPlan)
@@ -411,7 +450,10 @@ function App() {
         setRealPlanState('ready')
         return { status: 'ok', source: 'google-maps', itinerary: serializePlanData(realPlan) }
       } catch (error) {
-        return { status: 'error', message: getGoogleErrorMessage(error), itinerary: serializePlan() }
+        setRealPlanState('error')
+        const message = getGoogleErrorMessage(error)
+        setNotice(message)
+        throw new Error(message)
       }
     },
     getPlaceStatus(input) {
@@ -432,18 +474,14 @@ function App() {
       return { status: 'ok', route: stop.walkFromPrevious, source: 'google-maps' }
     },
     getItinerary: serializePlan,
-    proposeItinerary(input) {
-      const requestedIntent = typeof input.intent === 'string' ? input.intent : intent
-      setNotice('An agent prepared a proposal visible to the person; it has not been applied.')
-      return { status: 'proposal', intent: requestedIntent, itinerary: serializePlan(), applied: false }
-    },
-    replaceStop(input) {
-      const stop = findToolStop(input)
-      if (!stop) throw new Error('STOP_NOT_FOUND')
+    async planWalk(input) {
+      const requestedIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
+      const { planner, realPlan } = await buildPlanFromIntent(requestedIntent)
       return {
-        status: 'unavailable',
-        message: 'Real replacement search is not implemented yet, so Buki will not invent a replacement.',
-        stopId: stop.id,
+        status: 'ok',
+        intent: planner.intent,
+        explanation: planner.explanation,
+        itinerary: serializePlanData(realPlan),
       }
     },
     focusStop(input) {
@@ -465,13 +503,11 @@ function App() {
       const nextIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
       if (!nextIntent) throw new Error('INTENT_REQUIRED')
       setIntent(nextIntent)
-      setNotice('Intent updated by an agent; the person must submit it to build a real route.')
+      setNotice('Intent updated by an agent. It has not built a route yet.')
       return { status: 'ok', intent: nextIntent, planUpdated: false }
     },
     advanceToNextStop() {
-      const nextStop = availableStops[Math.min(activeStopIndex + 1, availableStops.length - 1)]
-      moveToNextStop()
-      return { status: 'ok', nextStop: nextStop ? { id: nextStop.id, name: nextStop.place.name } : null }
+      return moveToNextStop()
     },
     getBukiContext() {
       return {
@@ -522,9 +558,9 @@ function App() {
         <div className="map-footer">
           <div>
             <strong>{plan ? `${stops.length} stops` : 'No route yet'}</strong>
-            {plan && <><span>·</span><strong>{totalWalkingMinutes} min walking</strong></>}
+            {plan && <><span>·</span><strong>{totalWalkingMinutes} min walking</strong><span>·</span><strong>{totalEstimatedMinutes} min total</strong></>}
           </div>
-          <span>{plan ? `${plan.checkedAt}${plan.routeWarnings?.length ? ' · Review warnings' : ''}` : 'Real data starts after you choose a point.'}</span>
+          {plan && <span>{`${plan.checkedAt}${plan.routeWarnings?.length ? ' · Review warnings' : ''}`}</span>}
         </div>
       </section>
 
@@ -535,7 +571,7 @@ function App() {
             <div>
               <p className="eyebrow">Your walking plan</p>
               <h1 id="plan-title">{plan?.title ?? 'Start with a real location'}</h1>
-              <p className="plan-location">{plan ? `${plan.city} · ${totalWalkingMinutes} min walking` : 'Use your current location or drop a pin anywhere on the map.'}</p>
+              <p className="plan-location">{plan ? `${plan.city} · ${totalWalkingMinutes} min walking · ${totalEstimatedMinutes} min total` : 'Use your current location or drop a pin anywhere on the map.'}</p>
             </div>
             <span className={`plan-status ${plan ? 'is-real' : ''}`}>{plan ? 'Real' : 'Waiting for origin'}</span>
           </header>

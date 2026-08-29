@@ -67,7 +67,7 @@ export function useWebMcp(actions: BukiWebMcpActions) {
       for (const definition of BUKI_WEBMCP_TOOLS) {
         try {
           await document.modelContext!.registerTool(
-            createRegisteredTool(definition, actionsRef.current, recordCall),
+            createRegisteredTool(definition, actionsRef, recordCall),
             { signal: controller.signal },
           )
           count += 1

@@ -6,7 +6,7 @@ Base document: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
 ## 1. Product direction
 
-Buki helps a person in any city decide what to do right now. They write their intent in natural language and receive a small walking route with real places, opening information, distances, and an alternative if something changes. The city is not fixed to Santiago: the experience can operate anywhere with coverage and data from the selected map provider.
+Buki helps a person in any city decide what to do right now. They write their intent in natural language and receive a small walking route with real places, opening information, and distances. The city is not fixed to Santiago: the experience can operate anywhere with coverage and data from the selected map provider.
 
 > “I am in Santiago Center. I have the whole afternoon, want to eat something local, visit two interesting places, and walk no more than twenty minutes between each stop.”
 
@@ -77,7 +77,7 @@ Repair when a stop changes
 - **Frontend:** captures intent, displays the map, presents the plan, and allows corrections.
 - **Vercel server-side functions:** protect the LLM key, normalize responses, and coordinate orchestration that must not run in the browser.
 - **Map provider:** provides places, coordinates, status, opening information, and routes.
-- **Deterministic planner:** applies time, distance, ordering, and availability rules.
+- **Deterministic planner:** applies time, distance, dwell-time, ordering, and availability rules.
 - **LLM:** interprets natural language and explains decisions using verified data.
 - **WebMCP:** exposes product actions to an agent through structured contracts.
 
@@ -200,7 +200,7 @@ Current implementation:
 - Without a key, permission, or after an API error, the experience explains that real data is unavailable and does not show an invented route.
 - The manual intent form sends natural-language requests to the Vercel function when `BUKI_MODE=real` is configured for that function.
 - The server-side LLM adapter returns structured interests, time, walking, and stop-count constraints without inventing geographic facts.
-- Google Maps uses those constraints to search real categories, calculate the route, and reject routes that exceed the requested limits.
+- Google Maps uses those constraints to search real categories, calculate the route, and reject routes that exceed the requested walking or total-time limits, including estimated time at stops.
 
 ### Phase 4 — Natural language and planning
 
@@ -238,8 +238,7 @@ Currently registered tools:
 - `get_place_status`;
 - `compute_walking_route`;
 - `get_itinerary`;
-- `propose_itinerary`;
-- `replace_stop`;
+- `plan_walk`;
 - `focus_stop`;
 - `set_origin`;
 - `update_intent`;
@@ -255,7 +254,7 @@ Steps:
 5. Keep equivalent manual controls.
 6. Test errors, incomplete inputs, and the absence of WebMCP.
 
-The page includes a visible inspector showing the eleven tools, their schemas, whether they were registered by `document.modelContext`, and a summary of recent calls. When the browser does not offer WebMCP, the inspector still shows local definitions and the manual experience remains operational.
+The page includes a visible inspector showing the ten tools, their browser-registered schemas, annotations, and a summary of recent calls. When the browser does not offer WebMCP, the inspector still shows local definitions and the manual experience remains operational.
 
 A large tool catalog will not be implemented yet. Expanding WebMCP remains a discovery task after this flow is validated.
 

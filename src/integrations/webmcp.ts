@@ -5,8 +5,7 @@ export type WebMcpToolName =
   | 'get_place_status'
   | 'compute_walking_route'
   | 'get_itinerary'
-  | 'propose_itinerary'
-  | 'replace_stop'
+  | 'plan_walk'
   | 'focus_stop'
   | 'set_origin'
   | 'update_intent'
@@ -38,8 +37,7 @@ export interface BukiWebMcpActions {
   getPlaceStatus: (input: Record<string, unknown>) => Promise<unknown> | unknown
   computeWalkingRoute: (input: Record<string, unknown>) => Promise<unknown> | unknown
   getItinerary: () => Promise<unknown> | unknown
-  proposeItinerary: (input: Record<string, unknown>) => Promise<unknown> | unknown
-  replaceStop: (input: Record<string, unknown>) => Promise<unknown> | unknown
+  planWalk: (input: Record<string, unknown>) => Promise<unknown> | unknown
   focusStop: (input: Record<string, unknown>) => Promise<unknown> | unknown
   setOrigin: (input: Record<string, unknown>) => Promise<unknown> | unknown
   updateIntent: (input: Record<string, unknown>) => Promise<unknown> | unknown
@@ -51,7 +49,7 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   {
     name: 'search_nearby_places',
     title: 'Search nearby places',
-    description: 'Searches for places near the current origin, optionally filtered by food, culture, or outdoor activity.',
+    description: 'Builds a new real nearby route from the current origin, optionally filtered by category and search radius. The new route becomes visible in Buki.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -60,7 +58,7 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
       },
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { untrustedContentHint: true },
   },
   {
     name: 'get_place_status',
@@ -74,16 +72,15 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
       required: ['placeId'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
   },
   {
     name: 'compute_walking_route',
     title: 'Compute walking route',
-    description: 'Returns the walking time and distance between two places in the current plan.',
+    description: 'Returns the planned walking leg that leads to a stop in the current route.',
     inputSchema: {
       type: 'object',
       properties: {
-        fromPlaceId: { type: 'string', description: 'Leg origin. Use origin for the starting point.' },
         toPlaceId: { type: 'string', description: 'Leg destination.' },
       },
       required: ['toPlaceId'],
@@ -96,12 +93,12 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
     title: 'Get current itinerary',
     description: 'Reads the current route, its stops, statuses, times, and data source.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
   },
   {
-    name: 'propose_itinerary',
-    title: 'Propose itinerary',
-    description: 'Prepares a plan proposal based on an intent without applying it automatically.',
+    name: 'plan_walk',
+    title: 'Build a walking plan',
+    description: 'Uses the LLM to interpret a person’s intent, then uses Google Maps to build and display a real walking plan in Buki.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -110,21 +107,7 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
       required: ['intent'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
-  },
-  {
-    name: 'replace_stop',
-    title: 'Replace stop',
-    description: 'Reports that a real replacement search is not available yet; it never invents a replacement.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        stopId: { type: 'string', description: 'Identifier of the stop to replace.' },
-        apply: { type: 'boolean', description: 'When true, makes the replacement visible in the plan.' },
-      },
-      required: ['stopId'],
-      additionalProperties: false,
-    },
+    annotations: { untrustedContentHint: true },
   },
   {
     name: 'focus_stop',
@@ -138,6 +121,7 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
       required: ['stopId'],
       additionalProperties: false,
     },
+    annotations: { untrustedContentHint: true },
   },
   {
     name: 'set_origin',
@@ -152,6 +136,7 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
       required: ['latitude', 'longitude'],
       additionalProperties: false,
     },
+    annotations: { untrustedContentHint: true },
   },
   {
     name: 'update_intent',
@@ -171,13 +156,14 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
     title: 'Advance to next stop',
     description: 'Marks the current leg as started and focuses the next available stop.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { untrustedContentHint: true },
   },
   {
     name: 'get_buki_context',
     title: 'Get Buki context',
     description: 'Returns a summary of Buki, WebMCP availability, and the plan data source.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
   },
 ]
 
@@ -186,8 +172,7 @@ const ACTIONS_BY_TOOL: Record<WebMcpToolName, keyof BukiWebMcpActions> = {
   get_place_status: 'getPlaceStatus',
   compute_walking_route: 'computeWalkingRoute',
   get_itinerary: 'getItinerary',
-  propose_itinerary: 'proposeItinerary',
-  replace_stop: 'replaceStop',
+  plan_walk: 'planWalk',
   focus_stop: 'focusStop',
   set_origin: 'setOrigin',
   update_intent: 'updateIntent',
@@ -203,7 +188,7 @@ function summarizeResult(result: unknown) {
 
 export function createRegisteredTool(
   definition: WebMcpToolDefinition,
-  actions: BukiWebMcpActions,
+  actionsRef: { current: BukiWebMcpActions },
   onCall: (record: Omit<WebMcpCallRecord, 'id' | 'timestamp'>) => void,
 ): RegisteredBukiTool {
   const actionName = ACTIONS_BY_TOOL[definition.name]
@@ -212,13 +197,13 @@ export function createRegisteredTool(
     ...definition,
     async execute(input) {
       try {
-        const result = await actions[actionName](input)
+        const result = await actionsRef.current[actionName](input)
         onCall({ name: definition.name, status: 'success', summary: summarizeResult(result) })
         return result
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Tool execution failed'
         onCall({ name: definition.name, status: 'error', summary: message.slice(0, 120) })
-        return { status: 'error', message }
+        throw error instanceof Error ? error : new Error(message)
       }
     },
   }

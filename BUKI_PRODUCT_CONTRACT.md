@@ -10,7 +10,7 @@ Initial validation scenario: Santiago Center, Chile.
 
 The person writes in natural language what they want to do, how much time they have, and how far they are willing to walk. Buki combines that intent with real places, opening information, and routes to deliver a small route they can follow right now.
 
-If a stop becomes unavailable, Buki proposes a replacement that preserves the plan's important constraints.
+If a stop becomes unavailable, Buki reports that state clearly and never invents a replacement. Verified stop repair remains a follow-up capability.
 
 ### What “realistic” means
 
@@ -119,11 +119,10 @@ WebMCP is an interaction layer for the agent, not the value proposition for the 
 - `search_nearby_places`;
 - `get_place_status`;
 - `compute_walking_route`;
-- `propose_itinerary`;
-- `replace_stop`;
+- `plan_walk`;
 - `focus_stop`.
 
-The challenge implementation expands this foundation with `set_origin`, `update_intent`, `advance_to_next_stop`, and `get_buki_context`, for a current total of eleven registered tools. Buki's visual inspector lets people review schemas and status without making WebMCP a requirement for manual use.
+The challenge implementation expands this foundation with `set_origin`, `update_intent`, `advance_to_next_stop`, and `get_buki_context`, for a current total of ten registered tools. Buki's visual inspector lets people review schemas and status without making WebMCP a requirement for manual use.
 
 ## Post-MVP: expand WebMCP
 
