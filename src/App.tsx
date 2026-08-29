@@ -31,7 +31,6 @@ import type { BukiWebMcpActions } from './integrations/webmcp'
 type MapState = 'loading' | 'ready' | 'error' | 'unavailable'
 type LocationState = 'idle' | 'picking' | 'requesting' | 'resolving' | 'selected' | 'denied' | 'unsupported'
 type OriginMethod = 'device' | 'map' | 'agent' | null
-type PlanningActivity = { label: string; state: 'active' | 'complete' }
 
 const DEFAULT_INTENT = ''
 const DEFAULT_MAP_CENTER: GeoPoint = { lat: 20, lng: 0 }
@@ -176,7 +175,7 @@ function App() {
   const [origin, setOrigin] = useState<TripLocation | null>(null)
   const [plan, setPlan] = useState<TripPlan | null>(null)
   const [activeStopIndex, setActiveStopIndex] = useState(0)
-  const [planningActivity, setPlanningActivity] = useState<PlanningActivity[]>([])
+  const [planningActivityLabel, setPlanningActivityLabel] = useState('')
   const [notice, setNotice] = useState('')
   const [mapError, setMapError] = useState('')
   const [inspectorOpen, setInspectorOpen] = useState(false)
@@ -329,18 +328,15 @@ function App() {
   }
 
   function beginPlanningActivity(label: string) {
-    setPlanningActivity([{ label, state: 'active' }])
+    setPlanningActivityLabel(label)
   }
 
   function advancePlanningActivity(label: GoogleMapProgress) {
-    setPlanningActivity((current) => {
-      if (current.at(-1)?.label === label) return current
-      return [...current.map((item) => ({ ...item, state: 'complete' as const })), { label, state: 'active' }]
-    })
+    setPlanningActivityLabel(label)
   }
 
   function finishPlanningActivity() {
-    setPlanningActivity([])
+    setPlanningActivityLabel('')
   }
 
   async function fetchRealPlan(
@@ -406,7 +402,7 @@ function App() {
 
     setIsPlanning(true)
     setNotice('Buki is shaping your plan…')
-    beginPlanningActivity('Buki is interpreting your request')
+    beginPlanningActivity('Thinking about your plan…')
     clearDraftRoute()
     try {
       const planner = await requestLlmPlan(nextIntent, answers)
@@ -678,7 +674,7 @@ function App() {
   const webmcp = useWebMcp(webMcpActions)
 
   const plannerSubmitLabel = isPlanning
-    ? readyPlanner ? 'Creating your walk…' : 'Buki is thinking…'
+    ? planningActivityLabel || 'Buki is thinking…'
     : plan ? 'Walk created'
       : readyPlanner ? 'Create my walk'
         : clarification ? 'Continue with this answer'
@@ -838,37 +834,20 @@ function App() {
               )}
             </section>
 
-            <button className="primary-button planner-submit" type="submit" disabled={isPlanning || Boolean(plan)}>
+            <button className={`primary-button planner-submit ${isPlanning ? 'is-thinking' : ''}`} type="submit" disabled={isPlanning || Boolean(plan)}>
               <span className="planner-submit-number" aria-hidden="true">3</span>
               <span>{plannerSubmitLabel}</span>
-              <span className="planner-submit-icon" aria-hidden="true">↗</span>
+              {isPlanning ? (
+                <span className="planner-loading-dots" aria-label="Working"><i /><i /><i /></span>
+              ) : (
+                <span className="planner-submit-icon" aria-hidden="true">↗</span>
+              )}
             </button>
           </form>
 
-          {planningActivity.length > 0 && (
-            <section className="planning-activity" aria-label="Live planning activity" aria-live="polite">
-              <div className="planning-activity-header">
-                <span className="planning-orb" aria-hidden="true"><i /><i /><i /></span>
-                <div>
-                  <p>Live activity</p>
-                  <strong>{planningActivity.at(-1)?.label}</strong>
-                </div>
-              </div>
-              <ol className="planning-activity-log">
-                {planningActivity.map((item) => (
-                  <li key={item.label} className={`is-${item.state}`}>
-                    <span aria-hidden="true">{item.state === 'complete' ? '✓' : ''}</span>
-                    {item.label}
-                  </li>
-                ))}
-              </ol>
-              <p className="planning-activity-note">Buki will keep this updated while it works.</p>
-            </section>
-          )}
+          {!plan && !isPlanning && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> We'll find real places and walking routes.</p>}
 
-          {!plan && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> We'll find real places and walking routes.</p>}
-
-          {notice && <p className="notice" aria-live="polite">{notice}</p>}
+          {notice && !isPlanning && <p className="notice" aria-live="polite">{notice}</p>}
           {locationState === 'denied' && <p className="state-hint">Location permission was denied. Pick a point on the map instead.</p>}
           {locationState === 'unsupported' && <p className="state-hint">This browser does not expose location access. Pick a point on the map instead.</p>}
 
