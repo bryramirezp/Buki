@@ -89,7 +89,7 @@ Google Maps Platform will be used end to end to validate the “real map” prom
 
 - Maps JavaScript API from the frontend for the embedded map.
 - Places API for places and details, using the frontend-compatible mode where appropriate.
-- Maps JavaScript API Directions Service for walking routes in the frontend MVP. The current documentation marks it as deprecated, so migration to the Routes Library/API is recorded as technical follow-up before scaling.
+- Maps JavaScript API with the Places (New) and Routes libraries for browser-side place discovery and walking routes. The key is restricted to the deployed website and enabled APIs.
 
 The browser Google Maps key is not treated as a secret: it will be restricted by domain, APIs, and quotas. The LLM will be called from a Vercel server-side function with `LLM_API_KEY`, which must never be included in `VITE_*` variables or the frontend bundle. A separate FastAPI server is not required for the MVP.
 
@@ -195,7 +195,7 @@ Current implementation:
 - `@googlemaps/js-api-loader` loads the Maps JavaScript API only when `VITE_GOOGLE_MAPS_API_KEY` exists.
 - `Place.searchNearby()` searches candidates for food, culture, and outdoor activity; `fetchFields()` requests details only for finalists.
 - `Place.isOpen()` and business status are shown as open, closed, or unknown.
-- `DirectionsService` calculates a `WALKING` route with up to three stops and draws it inside Buki.
+- `Route.computeRoutes()` calculates a `WALKING` route with up to three stops and draws it inside Buki using the current Routes Library.
 - A button requests device geolocation with browser consent; if denied, the manual point is kept.
 - Without a key, permission, or after an API error, the experience falls back to mock data and explains the reason in the interface.
 - Intent is not yet interpreted by the LLM; that belongs to Phase 4. In this phase, real search uses three base categories to validate the geographic integration.

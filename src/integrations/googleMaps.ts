@@ -3,8 +3,7 @@ import type { GeoPoint, PlaceAvailability, PlaceKind, TripLocation, TripPlan, Tr
 
 export interface GoogleMapsController {
   map: google.maps.Map
-  directionsService: google.maps.DirectionsService
-  directionsRenderer: google.maps.DirectionsRenderer
+  routePolylines: google.maps.Polyline[]
   markers: google.maps.Marker[]
 }
 
@@ -70,21 +69,9 @@ export async function createGoogleMap(
     gestureHandling: 'greedy',
   })
 
-  const directionsRenderer = new google.maps.DirectionsRenderer({
-    map,
-    suppressMarkers: true,
-    preserveViewport: false,
-    polylineOptions: {
-      strokeColor: '#e56e47',
-      strokeOpacity: 0.95,
-      strokeWeight: 5,
-    },
-  })
-
   return {
     map,
-    directionsService: new google.maps.DirectionsService(),
-    directionsRenderer,
+    routePolylines: [],
     markers: [],
   }
 }
@@ -223,30 +210,44 @@ async function drawWalkingRoute(
   const destinations = places.filter((place) => Boolean(place.coordinates))
   if (destinations.length === 0) throw new Error('GOOGLE_MAPS_NO_ROUTE_DESTINATIONS')
 
+  const { Route } = await importLibrary('routes') as google.maps.RoutesLibrary
   const destination = destinations[destinations.length - 1].coordinates!
-  const waypoints = destinations.slice(0, -1).map((place) => ({
+  const intermediates = destinations.slice(0, -1).map((place) => ({
     location: place.coordinates!,
-    stopover: true,
+    via: false,
   }))
-  const response = await controller.directionsService.route({
+
+  const response = await Route.computeRoutes({
     origin,
     destination,
-    waypoints,
-    optimizeWaypoints: false,
-    travelMode: google.maps.TravelMode.WALKING,
-    unitSystem: google.maps.UnitSystem.METRIC,
+    intermediates,
+    travelMode: 'WALKING',
+    language: 'en',
+    units: google.maps.UnitSystem.METRIC,
+    fields: ['path', 'legs', 'warnings'],
   })
 
-  controller.directionsRenderer.setDirections(response)
-  const route = response.routes[0]
+  const route = response.routes?.[0]
+  if (!route) throw new Error('GOOGLE_MAPS_NO_ROUTE')
+
+  controller.routePolylines.forEach((polyline) => polyline.setMap(null))
+  controller.routePolylines = route.createPolylines({
+    polylineOptions: {
+      strokeColor: '#e56e47',
+      strokeOpacity: 0.95,
+      strokeWeight: 5,
+    },
+  })
+  controller.routePolylines.forEach((polyline) => polyline.setMap(controller.map))
+
   const legs = route?.legs ?? []
   const segments = destinations.map((place, index) => {
     const leg = legs[index]
     return {
       fromId: index === 0 ? 'origin' : destinations[index - 1].id,
       toId: place.id,
-      minutes: Math.max(1, Math.round((leg?.duration?.value ?? 0) / 60)),
-      meters: leg?.distance?.value ?? 0,
+      minutes: Math.max(1, Math.round((leg?.durationMillis ?? 0) / 60000)),
+      meters: leg?.distanceMeters ?? 0,
     }
   })
 

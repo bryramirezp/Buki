@@ -163,7 +163,7 @@ function App() {
   const mapLabel = mapState === 'ready'
       ? plan.source === 'google-maps' ? 'Google Maps · real' : 'Google Maps ready'
     : mapState === 'loading'
-      ? 'Cargando Google Maps'
+      ? 'Loading Google Maps'
       : mapState === 'error'
         ? 'Mock · Maps unavailable'
         : 'Mock · no Maps key'
