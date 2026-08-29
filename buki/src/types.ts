@@ -40,3 +40,57 @@ export interface ApprovalRequest {
   costDelta: number
   note: string
 }
+
+export type PlaceAvailability = 'open' | 'closed' | 'unknown'
+
+export type PlaceKind = 'food' | 'culture' | 'view'
+
+export interface TripLocation {
+  id: string
+  name: string
+  detail: string
+  x: number
+  y: number
+}
+
+export interface TripPlace {
+  id: string
+  name: string
+  kind: PlaceKind
+  summary: string
+  address: string
+  availability: PlaceAvailability
+  availabilityLabel: string
+  checkedAt: string
+  x: number
+  y: number
+}
+
+export interface WalkingSegment {
+  fromId: string
+  toId: string
+  minutes: number
+  meters: number
+}
+
+export interface TripStop {
+  id: string
+  sequence: number
+  place: TripPlace
+  walkFromPrevious: WalkingSegment
+}
+
+export interface TripPlan {
+  title: string
+  city: string
+  origin: TripLocation
+  totalWalkingMinutes: number
+  stops: TripStop[]
+}
+
+export interface PlaceAlternative {
+  replacesStopId: string
+  place: TripPlace
+  walkFromPrevious: WalkingSegment
+  reason: string
+}

@@ -1,6 +1,6 @@
 # Buki — Plan de construcción
 
-Estado: Fase 0 definida  
+Estado: Fase 2 completada en modo mock
 Escenario de validación inicial: centro de Santiago de Chile  
 Documento base: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
@@ -151,6 +151,8 @@ Pasos:
 Salida de fase: Buki arranca localmente con un modo simulado; las funciones Vercel definen la frontera server-side para el LLM y Google Maps queda preparado para ejecutarse desde el frontend. No existe un servicio FastAPI separado.
 
 ### Fase 2 — Experiencia móvil con datos simulados
+
+Estado: completada en modo mock.
 
 Objetivo: validar que la experiencia se entiende antes de pagar APIs.
 

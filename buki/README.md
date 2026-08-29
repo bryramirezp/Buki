@@ -1,8 +1,8 @@
 # Buki app
 
-Frontend React + Vite + TypeScript. La Fase 1 deja un arranque mínimo con modo
-`mock` y funciones server-side de Vercel; la experiencia móvil y el plan simulado se
-construyen en la Fase 2.
+Frontend React + Vite + TypeScript. La Fase 2 valida el recorrido mobile-first con
+datos simulados; las funciones server-side de Vercel quedan disponibles para la
+orquestación del LLM.
 
 ## Desarrollo local
 

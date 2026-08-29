@@ -9,4 +9,4 @@ Documentos principales:
 - [`BUKI_PRODUCT_CONTRACT.md`](./BUKI_PRODUCT_CONTRACT.md): promesa, usuario, límites y criterios de éxito.
 - [`BUKI_BUILD_PLAN.md`](./BUKI_BUILD_PLAN.md): fases de construcción, arquitectura, pruebas y regla de parada.
 
-Estado actual: Fase 1 completada. La base reversible de Buki incluye un frontend React/Vite/TypeScript, funciones server-side de Vercel para el LLM y modo `mock`.
+Estado actual: Fase 2 completada en modo mock. Buki tiene una experiencia mobile-first con mapa conceptual, plan simulado y reparación de una parada; las funciones server-side de Vercel quedan preparadas para el LLM.
