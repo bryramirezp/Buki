@@ -16,7 +16,7 @@ import type { BukiWebMcpActions } from './integrations/webmcp'
 
 type MapState = 'loading' | 'ready' | 'error' | 'unavailable'
 type LocationState = 'idle' | 'picking' | 'requesting' | 'resolving' | 'selected' | 'denied' | 'unsupported'
-type RealPlanState = 'idle' | 'loading' | 'ready' | 'error'
+type OriginMethod = 'device' | 'map' | 'agent' | null
 
 interface PlannerResponse {
   mode: 'llm'
@@ -26,7 +26,7 @@ interface PlannerResponse {
   request: TripRequest
 }
 
-const DEFAULT_INTENT = 'I have the afternoon free and would like a local food and culture walk with short distances between stops.'
+const DEFAULT_INTENT = ''
 const DEFAULT_MAP_CENTER: GeoPoint = { lat: 20, lng: 0 }
 const DEFAULT_MAP_ZOOM = 2
 const SELECTED_POINT_ZOOM = 15
@@ -117,7 +117,7 @@ function App() {
   const mapPointSelectionRef = useRef(false)
   const [mapState, setMapState] = useState<MapState>(mapsApiKey ? 'loading' : 'unavailable')
   const [locationState, setLocationState] = useState<LocationState>('idle')
-  const [realPlanState, setRealPlanState] = useState<RealPlanState>('idle')
+  const [originMethod, setOriginMethod] = useState<OriginMethod>(null)
   const [plannerRequest, setPlannerRequest] = useState<TripRequest | null>(null)
   const [isPlanning, setIsPlanning] = useState(false)
   const [intent, setIntent] = useState(DEFAULT_INTENT)
@@ -186,6 +186,15 @@ function App() {
       : mapState === 'error'
         ? 'Maps unavailable'
         : 'Maps key required'
+  const locationStepMessage = locationState === 'requesting'
+    ? 'Waiting for location permission…'
+    : locationState === 'resolving'
+      ? 'Finding that point…'
+      : locationState === 'picking'
+        ? 'Tap anywhere on the map to set your starting point.'
+        : origin
+          ? `Starting from ${origin.name}. You can change this anytime.`
+          : 'You can change this anytime.'
 
   async function selectOriginFromPoint(coordinates: GeoPoint, source: 'device' | 'map' | 'agent'): Promise<TripLocation> {
     mapPointSelectionRef.current = false
@@ -210,9 +219,9 @@ function App() {
       coordinates,
     }
     setOrigin(nextOrigin)
+    setOriginMethod(source)
     setPlan(null)
     setActiveStopIndex(0)
-    setRealPlanState('idle')
     clearGoogleMapRoute(controller)
     updateGoogleMapMarkers(controller, nextOrigin, [])
     setLocationState('selected')
@@ -228,6 +237,7 @@ function App() {
       return
     }
     mapPointSelectionRef.current = true
+    setOriginMethod('map')
     setLocationState('picking')
     setNotice('Tap a point on the map to use it as your starting point.')
     try {
@@ -247,6 +257,7 @@ function App() {
     }
 
     mapPointSelectionRef.current = false
+    setOriginMethod('device')
     setLocationState('requesting')
     setNotice('Waiting for permission to access your location…')
     navigator.geolocation.getCurrentPosition(
@@ -268,34 +279,6 @@ function App() {
     if (!origin) throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
     const controller = await ensureGoogleMap(origin.coordinates, SELECTED_POINT_ZOOM)
     return buildGoogleTripPlan(controller, origin, title, origin.detail, request)
-  }
-
-  async function searchRealPlan() {
-    if (!origin) {
-      setNotice('Choose your current location or a point on the map first.')
-      return
-    }
-    if (!mapsApiKey) {
-      setNotice('Configure a Google Maps key to build a real route.')
-      return
-    }
-
-    setRealPlanState('loading')
-    setNotice('Querying places, opening hours, and walking route…')
-    if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
-    setPlan(null)
-    try {
-      const realPlan = await fetchRealPlan()
-      setPlan(realPlan)
-      setActiveStopIndex(0)
-      setRealPlanState('ready')
-      setNotice(realPlan.routeWarnings?.length
-        ? 'Real plan ready. Review the route walking warning.'
-        : `Real plan ready with ${realPlan.stops.length} nearby places.`)
-    } catch (error) {
-      setRealPlanState('error')
-      setNotice(getGoogleErrorMessage(error))
-    }
   }
 
   async function requestLlmPlan(nextIntent: string): Promise<PlannerResponse> {
@@ -345,18 +328,15 @@ function App() {
       const planner = await requestLlmPlan(nextIntent)
       setPlannerRequest(planner.request)
       setIntent(planner.intent)
-      setRealPlanState('loading')
       setNotice('Finding real places and calculating the walking route…')
       if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
       setPlan(null)
       const realPlan = await fetchRealPlan(planner.request, planner.title)
       setPlan(realPlan)
       setActiveStopIndex(0)
-      setRealPlanState('ready')
       setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
       return { planner, realPlan }
     } catch (error) {
-      setRealPlanState('error')
       setNotice(getPlannerErrorMessage(error))
       throw error
     } finally {
@@ -366,7 +346,7 @@ function App() {
 
   function moveToNextStop() {
     if (!availableStops.length) {
-      setNotice('Build a real route before starting a leg.')
+      setNotice('Create a walk before starting a leg.')
       return { status: 'needs_plan' as const, nextStop: null }
     }
     if (activeStopIndex >= availableStops.length - 1) {
@@ -439,7 +419,6 @@ function App() {
         ...(requestedKind ? { interests: [requestedKind] } : {}),
         ...(radiusMeters ? { searchRadiusMeters: radiusMeters } : {}),
       }
-      setRealPlanState('loading')
       setNotice('An agent is building a new real nearby route…')
       if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
       setPlan(null)
@@ -447,10 +426,8 @@ function App() {
         const realPlan = await fetchRealPlan(request)
         setPlan(realPlan)
         setActiveStopIndex(0)
-        setRealPlanState('ready')
         return { status: 'ok', source: 'google-maps', itinerary: serializePlanData(realPlan) }
       } catch (error) {
-        setRealPlanState('error')
         const message = getGoogleErrorMessage(error)
         setNotice(message)
         throw new Error(message)
@@ -569,53 +546,64 @@ function App() {
         <div className="plan-content">
           <header className="plan-header">
             <div>
-              <p className="eyebrow">Your walking plan</p>
-              <h1 id="plan-title">{plan?.title ?? 'Start with a real location'}</h1>
-              <p className="plan-location">{plan ? `${plan.city} · ${totalWalkingMinutes} min walking · ${totalEstimatedMinutes} min total` : 'Use your current location or drop a pin anywhere on the map.'}</p>
+              <h1 id="plan-title">{plan?.title ?? 'Make today count.'}</h1>
+              <p className="plan-location">{plan ? `${plan.city} · ${totalWalkingMinutes} min walking · ${totalEstimatedMinutes} min total` : 'A real, walkable itinerary for the mood you’re in—ready in three simple steps.'}</p>
             </div>
-            <span className={`plan-status ${plan ? 'is-real' : ''}`}>{plan ? 'Real' : 'Waiting for origin'}</span>
           </header>
 
-          <section className="location-card" aria-labelledby="location-title">
-            <div className="section-heading">
-              <div>
-                <p className="section-kicker">Starting point</p>
-                <h2 id="location-title">Choose where you are</h2>
+          <form className="planner-steps" onSubmit={submitIntent}>
+            <section className="planner-step origin-step" aria-labelledby="location-title">
+              <div className="planner-step-heading">
+                <span className="planner-step-number" aria-hidden="true">1</span>
+                <h2 id="location-title">Choose a starting point</h2>
               </div>
-              <span className="location-icon" aria-hidden="true">⌖</span>
-            </div>
-            <p className="origin-summary">
-              {origin ? <><strong>{origin.name}</strong><span>{origin.detail}</span></> : 'No starting point selected yet.'}
-            </p>
-            <div className="location-actions">
-              <button className="text-button" type="button" onClick={requestDeviceLocation} disabled={locationState === 'requesting' || locationState === 'resolving'}>
-                <span aria-hidden="true">◎</span> {locationState === 'requesting' ? 'Waiting for permission…' : 'Use my current location'}
-              </button>
-              <button className="text-button secondary" type="button" onClick={() => void startMapPointSelection()} disabled={mapState !== 'ready' || locationState === 'resolving'}>
-                {locationState === 'picking' ? 'Tap the map to set the point' : 'Choose a point on the map'}
-              </button>
-            </div>
-            {mapsApiKey ? (
-              <button className="real-search-button" type="button" onClick={() => void searchRealPlan()} disabled={!origin || realPlanState === 'loading' || isPlanning}>
-                <span>{realPlanState === 'loading' ? 'Querying Google Maps…' : 'Build a real route nearby'}</span>
-                <span aria-hidden="true">↗</span>
-              </button>
-            ) : (
-              <p className="key-hint">Configure <code>VITE_GOOGLE_MAPS_API_KEY</code> to choose a real point and build a route.</p>
-            )}
-          </section>
+              <div className="origin-options">
+                <button
+                  className={`origin-option ${originMethod === 'device' ? 'is-selected' : ''}`}
+                  type="button"
+                  onClick={requestDeviceLocation}
+                  disabled={locationState === 'requesting' || locationState === 'resolving'}
+                  aria-pressed={originMethod === 'device'}
+                >
+                  <span className="origin-option-icon" aria-hidden="true">➤</span>
+                  <span>{locationState === 'requesting' ? 'Waiting for permission…' : 'Use my location'}</span>
+                </button>
+                <button
+                  className={`origin-option ${originMethod === 'map' ? 'is-selected' : ''}`}
+                  type="button"
+                  onClick={() => void startMapPointSelection()}
+                  disabled={mapState !== 'ready' || locationState === 'resolving'}
+                  aria-pressed={originMethod === 'map'}
+                >
+                  <span className="origin-option-icon" aria-hidden="true">⌖</span>
+                  <span>{locationState === 'picking' ? 'Tap the map' : 'Pick a point on the map'}</span>
+                </button>
+              </div>
+              <p className="planner-step-hint" aria-live="polite">{locationStepMessage}</p>
+            </section>
 
-          <form className="intent-form" onSubmit={submitIntent}>
-            <label htmlFor="intent">What do you want to do?</label>
-            <textarea id="intent" value={intent} onChange={(event) => setIntent(event.target.value)} rows={3} />
-            <button className="primary-button" type="submit" disabled={isPlanning || !origin}>
-              {isPlanning ? 'Building your plan…' : 'Build a real plan'} <span aria-hidden="true">↗</span>
+            <section className="planner-step intent-step" aria-labelledby="intent-title">
+              <div className="planner-step-heading">
+                <span className="planner-step-number" aria-hidden="true">2</span>
+                <h2 id="intent-title">What would you enjoy?</h2>
+              </div>
+              <label className="intent-input" htmlFor="intent">
+                <textarea id="intent" value={intent} onChange={(event) => setIntent(event.target.value)} rows={2} aria-label="What would you enjoy?" />
+              </label>
+            </section>
+
+            <button className="primary-button planner-submit" type="submit" disabled={isPlanning}>
+              <span className="planner-submit-number" aria-hidden="true">3</span>
+              <span>{isPlanning ? 'Creating your walk…' : 'Create my walk'}</span>
+              <span className="planner-submit-icon" aria-hidden="true">↗</span>
             </button>
           </form>
 
+          {!plan && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> We'll find real places and walking routes.</p>}
+
           {notice && <p className="notice" aria-live="polite">{notice}</p>}
-          {locationState === 'denied' && <p className="state-hint">Location permission was denied. Choose a point on the map instead.</p>}
-          {locationState === 'unsupported' && <p className="state-hint">This browser does not expose geolocation. Choose a point on the map instead.</p>}
+          {locationState === 'denied' && <p className="state-hint">Location permission was denied. Pick a point on the map instead.</p>}
+          {locationState === 'unsupported' && <p className="state-hint">This browser does not expose location access. Pick a point on the map instead.</p>}
 
           {plan && currentStop && (
             <section className="next-stop-card" aria-labelledby="next-stop-title">
@@ -651,13 +639,7 @@ function App() {
                 ))}
               </div>
             </section>
-          ) : (
-            <section className="empty-plan" aria-labelledby="empty-plan-title">
-              <p className="section-kicker">Real-data flow</p>
-              <h2 id="empty-plan-title">Choose a point, then describe your plan.</h2>
-              <p>Buki will use the LLM to understand your request and Google Maps to find the actual places and walking route.</p>
-            </section>
-          )}
+          ) : null}
 
           {plan && (
             <footer className="data-footer">
