@@ -7,6 +7,11 @@ export interface GoogleMapsController {
   markers: google.maps.Marker[]
 }
 
+export interface GoogleMapAddress {
+  name: string
+  detail: string
+}
+
 interface NearbyCandidate {
   place: google.maps.places.Place
   kind: PlaceKind
@@ -43,6 +48,7 @@ export async function loadGoogleMaps(apiKey: string) {
     setOptions({ key: apiKey, v: 'weekly', language: 'en' })
     loadPromise = Promise.all([
       importLibrary('maps'),
+      importLibrary('geocoding'),
       importLibrary('marker'),
       importLibrary('places'),
       importLibrary('routes'),
@@ -56,12 +62,13 @@ export async function createGoogleMap(
   container: HTMLElement,
   center: GeoPoint,
   apiKey: string,
+  zoom = 15,
 ): Promise<GoogleMapsController> {
   await loadGoogleMaps(apiKey)
 
   const map = new google.maps.Map(container, {
     center,
-    zoom: 15,
+    zoom,
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: false,
@@ -76,8 +83,46 @@ export async function createGoogleMap(
   }
 }
 
-export function moveGoogleMap(controller: GoogleMapsController, center: GeoPoint) {
+export function moveGoogleMap(controller: GoogleMapsController, center: GeoPoint, zoom?: number) {
   controller.map.panTo(center)
+  if (typeof zoom === 'number') controller.map.setZoom(zoom)
+}
+
+export function clearGoogleMapRoute(controller: GoogleMapsController) {
+  controller.routePolylines.forEach((polyline) => polyline.setMap(null))
+  controller.routePolylines = []
+}
+
+export function enableGoogleMapPointSelection(
+  controller: GoogleMapsController,
+  onSelect: (coordinates: GeoPoint) => void,
+) {
+  controller.map.addListener('click', (event: google.maps.MapMouseEvent) => {
+    if (!event.latLng) return
+    onSelect({ lat: event.latLng.lat(), lng: event.latLng.lng() })
+  })
+}
+
+function coordinateDetail(coordinates: GeoPoint) {
+  return `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}`
+}
+
+export async function describeGoogleMapPoint(coordinates: GeoPoint): Promise<GoogleMapAddress> {
+  const { Geocoder } = await importLibrary('geocoding') as google.maps.GeocodingLibrary
+  const response = await new Geocoder().geocode({ location: coordinates, language: 'en' })
+  const result = response.results[0]
+  if (!result) {
+    return { name: 'Selected point', detail: coordinateDetail(coordinates) }
+  }
+
+  const locality = result.address_components.find((component) =>
+    component.types.includes('locality') || component.types.includes('administrative_area_level_1'),
+  )?.long_name
+
+  return {
+    name: result.formatted_address,
+    detail: locality ?? coordinateDetail(coordinates),
+  }
 }
 
 export function updateGoogleMapMarkers(
@@ -175,8 +220,6 @@ async function fetchPlaceDetails(candidate: NearbyCandidate): Promise<TripPlace 
     availability,
     availabilityLabel,
     checkedAt: `Checked now · ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
-    x: 26 + (kind === 'food' ? 48 : kind === 'culture' ? 30 : 8),
-    y: 36 + (kind === 'food' ? 0 : kind === 'culture' ? 28 : 48),
     coordinates: { lat: place.location.lat(), lng: place.location.lng() },
     mapsUrl: place.googleMapsURI ?? undefined,
   }
@@ -241,7 +284,7 @@ async function drawWalkingRoute(
   const route = response.routes?.[0]
   if (!route) throw new Error('GOOGLE_MAPS_NO_ROUTE')
 
-  controller.routePolylines.forEach((polyline) => polyline.setMap(null))
+  clearGoogleMapRoute(controller)
   controller.routePolylines = route.createPolylines({
     polylineOptions: {
       strokeColor: '#e56e47',

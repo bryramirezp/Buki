@@ -10,6 +10,6 @@ type ResponseLike = {
 export default function handler(_request: RequestLike, response: ResponseLike) {
   response.status(200).json({
     status: 'ok',
-    mode: process.env.BUKI_MODE ?? 'mock',
+    mode: process.env.BUKI_MODE ?? 'unconfigured',
   })
 }

@@ -115,7 +115,7 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   {
     name: 'replace_stop',
     title: 'Replace stop',
-    description: 'Proposes a replacement for a closed stop; applies it only when apply is true.',
+    description: 'Reports that a real replacement search is not available yet; it never invents a replacement.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -142,13 +142,14 @@ export const BUKI_WEBMCP_TOOLS: readonly WebMcpToolDefinition[] = [
   {
     name: 'set_origin',
     title: 'Set starting point',
-    description: 'Changes the plan origin to one of the starting points available in Buki.',
+    description: 'Changes the plan origin to a real latitude and longitude selected by the person or agent.',
     inputSchema: {
       type: 'object',
       properties: {
-        locationId: { type: 'string', description: 'Starting point identifier.' },
+        latitude: { type: 'number', minimum: -90, maximum: 90, description: 'Latitude of the selected starting point.' },
+        longitude: { type: 'number', minimum: -180, maximum: 180, description: 'Longitude of the selected starting point.' },
       },
-      required: ['locationId'],
+      required: ['latitude', 'longitude'],
       additionalProperties: false,
     },
   },

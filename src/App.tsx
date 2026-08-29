@@ -3,38 +3,33 @@ import { WebMcpInspector } from './components/WebMcpInspector'
 import type { GoogleMapsController } from './integrations/googleMaps'
 import {
   buildGoogleTripPlan,
+  clearGoogleMapRoute,
   createGoogleMap,
+  describeGoogleMapPoint,
+  enableGoogleMapPointSelection,
   moveGoogleMap,
   updateGoogleMapMarkers,
 } from './integrations/googleMaps'
-import type { TripLocation, TripPlace, TripRequest, TripStop } from './types'
+import type { GeoPoint, PlaceKind, TripLocation, TripPlace, TripPlan, TripRequest, TripStop } from './types'
 import { useWebMcp } from './hooks/useWebMcp'
 import type { BukiWebMcpActions } from './integrations/webmcp'
-import {
-  DEFAULT_INTENT,
-  getMockItinerary,
-  MOCK_ALTERNATIVE,
-  MOCK_LOCATIONS,
-} from './data/mockItinerary'
 
-type ServerState = 'mock' | 'checking' | 'online' | 'offline'
-type MapState = 'mock' | 'loading' | 'ready' | 'error'
-type LocationState = 'manual' | 'simulated' | 'requesting' | 'granted' | 'denied' | 'unsupported'
+type MapState = 'loading' | 'ready' | 'error' | 'unavailable'
+type LocationState = 'idle' | 'picking' | 'requesting' | 'resolving' | 'selected' | 'denied' | 'unsupported'
 type RealPlanState = 'idle' | 'loading' | 'ready' | 'error'
 
 interface PlannerResponse {
-  mode: 'llm' | 'mock'
+  mode: 'llm'
   intent: string
   title: string
   explanation: string
   request: TripRequest
 }
 
-const mode = import.meta.env.VITE_BUKI_MODE ?? 'mock'
-const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
-const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? ''
-const isMock = mode === 'mock'
-const DEFAULT_MAP_CENTER = { lat: -33.4372, lng: -70.6506 }
+const DEFAULT_INTENT = 'I have the afternoon free and would like a local food and culture walk with short distances between stops.'
+const DEFAULT_MAP_CENTER: GeoPoint = { lat: 20, lng: 0 }
+const DEFAULT_MAP_ZOOM = 2
+const SELECTED_POINT_ZOOM = 15
 
 const KIND_LABELS = {
   food: 'Eat something local',
@@ -48,13 +43,20 @@ const KIND_SYMBOLS = {
   view: '△',
 } as const
 
+const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
+const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? ''
+
 function formatDistance(meters: number) {
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${meters} m`
 }
 
+function coordinateDetail(coordinates: GeoPoint) {
+  return `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}`
+}
+
 function getGoogleErrorMessage(error: unknown) {
   if (error instanceof Error) {
-    if (error.message === 'GOOGLE_MAPS_KEY_MISSING') return 'Configure a Google Maps key to search real places.'
+    if (error.message === 'GOOGLE_MAPS_KEY_MISSING') return 'Configure a Google Maps key to build a real route.'
     if (error.message === 'GOOGLE_MAPS_NOT_ENOUGH_PLACES') return 'Google Maps did not find enough nearby places to build the route.'
     if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_WALK_LIMIT') return 'The available places do not fit your maximum walking time per leg.'
     if (error.message === 'GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT') return 'The available places do not fit your available time.'
@@ -62,7 +64,7 @@ function getGoogleErrorMessage(error: unknown) {
       return 'Google Maps rejected the request. Check enabled APIs, restrictions, and key billing.'
     }
   }
-  return 'We could not query Google Maps right now. The simulated route is still available.'
+  return 'We could not query Google Maps right now. Please try again.'
 }
 
 function getPlannerErrorMessage(error: unknown) {
@@ -78,7 +80,7 @@ function isPlannerResponse(value: unknown): value is PlannerResponse {
   if (!request || typeof request !== 'object') return false
   const parsedRequest = request as Record<string, unknown>
   return (
-    (candidate.mode === 'llm' || candidate.mode === 'mock') &&
+    candidate.mode === 'llm' &&
     typeof candidate.intent === 'string' &&
     typeof candidate.title === 'string' &&
     typeof candidate.explanation === 'string' &&
@@ -89,58 +91,51 @@ function isPlannerResponse(value: unknown): value is PlannerResponse {
   )
 }
 
+function pointFromToolInput(input: Record<string, unknown>): GeoPoint | null {
+  const latitude = input.latitude
+  const longitude = input.longitude
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') return null
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null
+  return { lat: latitude, lng: longitude }
+}
+
 function App() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const googleMapRef = useRef<GoogleMapsController | null>(null)
   const mapInitializationRef = useRef<Promise<GoogleMapsController> | null>(null)
-  const [serverState, setServerState] = useState<ServerState>(isMock ? 'mock' : 'checking')
-  const [mapState, setMapState] = useState<MapState>(mapsApiKey ? 'loading' : 'mock')
-  const [locationState, setLocationState] = useState<LocationState>('manual')
+  const mapPointSelectionRef = useRef(false)
+  const [mapState, setMapState] = useState<MapState>(mapsApiKey ? 'loading' : 'unavailable')
+  const [locationState, setLocationState] = useState<LocationState>('idle')
   const [realPlanState, setRealPlanState] = useState<RealPlanState>('idle')
   const [plannerRequest, setPlannerRequest] = useState<TripRequest | null>(null)
   const [isPlanning, setIsPlanning] = useState(false)
   const [intent, setIntent] = useState(DEFAULT_INTENT)
-  const [selectedLocationId, setSelectedLocationId] = useState('plaza-armas')
-  const [origin, setOrigin] = useState<TripLocation>(() => getMockItinerary().origin)
-  const [plan, setPlan] = useState(() => getMockItinerary())
-  const [replacementApplied, setReplacementApplied] = useState(false)
+  const [origin, setOrigin] = useState<TripLocation | null>(null)
+  const [plan, setPlan] = useState<TripPlan | null>(null)
   const [activeStopIndex, setActiveStopIndex] = useState(0)
   const [notice, setNotice] = useState('')
   const [mapError, setMapError] = useState('')
   const [inspectorOpen, setInspectorOpen] = useState(false)
 
-  useEffect(() => {
-    if (isMock) return
-
-    const controller = new AbortController()
-
-    fetch(`${apiUrl}/api/health`, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('Server health check failed')
-        setServerState('online')
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setServerState('offline')
-      })
-
-    return () => controller.abort()
-  }, [])
-
-  async function ensureGoogleMap(center: { lat: number; lng: number }) {
+  async function ensureGoogleMap(center = DEFAULT_MAP_CENTER, zoom = DEFAULT_MAP_ZOOM) {
     if (!mapsApiKey) throw new Error('GOOGLE_MAPS_KEY_MISSING')
     if (googleMapRef.current) {
-      moveGoogleMap(googleMapRef.current, center)
+      moveGoogleMap(googleMapRef.current, center, zoom)
       return googleMapRef.current
     }
     if (mapInitializationRef.current) return mapInitializationRef.current
     if (!mapContainerRef.current) throw new Error('GOOGLE_MAPS_CONTAINER_MISSING')
 
     setMapState('loading')
-    const initialization = createGoogleMap(mapContainerRef.current, center, mapsApiKey)
+    const initialization = createGoogleMap(mapContainerRef.current, center, mapsApiKey, zoom)
       .then((controller) => {
         googleMapRef.current = controller
+        enableGoogleMapPointSelection(controller, (coordinates) => {
+          if (!mapPointSelectionRef.current) return
+          void selectOriginFromPoint(coordinates, 'map')
+        })
         setMapState('ready')
-        updateGoogleMapMarkers(controller, plan.origin, plan.stops)
         return controller
       })
       .catch((error) => {
@@ -156,141 +151,131 @@ function App() {
 
   useEffect(() => {
     if (!mapsApiKey) return
-    void ensureGoogleMap(plan.origin.coordinates ?? DEFAULT_MAP_CENTER).catch(() => undefined)
-    // The map is initialized once. Later origin changes are handled by changeLocation.
+    void ensureGoogleMap().catch(() => undefined)
+    // The map is initialized once. Later origin changes are handled by selectOriginFromPoint.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapsApiKey])
 
   useEffect(() => {
-    if (!googleMapRef.current || !plan.origin.coordinates) return
-    moveGoogleMap(googleMapRef.current, plan.origin.coordinates)
-    updateGoogleMapMarkers(googleMapRef.current, plan.origin, plan.stops)
-  }, [plan])
+    if (!googleMapRef.current || !origin) return
+    moveGoogleMap(googleMapRef.current, origin.coordinates, SELECTED_POINT_ZOOM)
+    updateGoogleMapMarkers(googleMapRef.current, origin, plan?.stops ?? [])
+  }, [origin, plan])
 
-  const usingMockRepair = plan.source !== 'google-maps'
-  const effectiveStops = plan.stops.map((stop) => {
-    if (!usingMockRepair || !replacementApplied || stop.id !== MOCK_ALTERNATIVE.replacesStopId) return stop
-    return {
-      ...stop,
-      place: MOCK_ALTERNATIVE.place,
-      walkFromPrevious: MOCK_ALTERNATIVE.walkFromPrevious,
-    }
-  })
-
-  const availableStops = effectiveStops.filter((stop) => stop.place.availability !== 'closed')
-  const currentStop = availableStops[Math.min(activeStopIndex, availableStops.length - 1)]
-  const originalAffectedStop = usingMockRepair
-    ? plan.stops.find((stop) => stop.id === MOCK_ALTERNATIVE.replacesStopId)
+  const stops = plan?.stops ?? []
+  const availableStops = stops.filter((stop) => stop.place.availability !== 'closed')
+  const currentStop = availableStops.length
+    ? availableStops[Math.min(activeStopIndex, availableStops.length - 1)]
     : undefined
-  const totalWalkingMinutes = replacementApplied && originalAffectedStop
-    ? plan.totalWalkingMinutes - originalAffectedStop.walkFromPrevious.minutes + MOCK_ALTERNATIVE.walkFromPrevious.minutes
-    : plan.totalWalkingMinutes
-  const routePoints = [plan.origin, ...effectiveStops.map((stop) => stop.place)]
-    .map((point) => `${point.x},${point.y}`)
-    .join(' ')
-
-  const serverLabel = {
-    mock: 'Mock functions',
-    checking: 'Checking connection',
-    online: 'Functions connected',
-    offline: 'Functions unavailable',
-  }[serverState]
-
+  const totalWalkingMinutes = plan?.totalWalkingMinutes ?? 0
   const mapLabel = mapState === 'ready'
-      ? plan.source === 'google-maps' ? 'Google Maps · real' : 'Google Maps ready'
+    ? plan ? 'Google Maps · real route' : 'Google Maps ready'
     : mapState === 'loading'
       ? 'Loading Google Maps'
       : mapState === 'error'
-        ? 'Mock · Maps unavailable'
-        : 'Mock · no Maps key'
+        ? 'Maps unavailable'
+        : 'Maps key required'
 
-  function changeLocation(locationId: string) {
-    const nextLocation = MOCK_LOCATIONS.find((location) => location.id === locationId)
-    if (!nextLocation) return
-    const nextPlan = getMockItinerary(locationId)
-    setSelectedLocationId(locationId)
-    setOrigin(nextLocation)
-    setPlan(nextPlan)
-    setReplacementApplied(false)
+  async function selectOriginFromPoint(coordinates: GeoPoint, source: 'device' | 'map' | 'agent'): Promise<TripLocation> {
+    mapPointSelectionRef.current = false
+    setLocationState('resolving')
+    setNotice('Looking up the selected location…')
+
+    const controller = await ensureGoogleMap(coordinates, SELECTED_POINT_ZOOM)
+    let name = source === 'device' ? 'Current location' : 'Selected point'
+    let detail = coordinateDetail(coordinates)
+    try {
+      const address = await describeGoogleMapPoint(coordinates)
+      name = address.name
+      detail = address.detail
+    } catch {
+      // Coordinates remain a truthful fallback if reverse geocoding is unavailable.
+    }
+
+    const nextOrigin: TripLocation = {
+      id: `point-${coordinates.lat.toFixed(6)}-${coordinates.lng.toFixed(6)}`,
+      name,
+      detail,
+      coordinates,
+    }
+    setOrigin(nextOrigin)
+    setPlan(null)
     setActiveStopIndex(0)
     setRealPlanState('idle')
-    if (googleMapRef.current && nextLocation.coordinates) moveGoogleMap(googleMapRef.current, nextLocation.coordinates)
-    setNotice(`Starting point updated: ${nextLocation.name}.`)
+    clearGoogleMapRoute(controller)
+    updateGoogleMapMarkers(controller, nextOrigin, [])
+    setLocationState('selected')
+    setNotice(source === 'device'
+      ? 'Your current location is ready. Describe what you want to do to build a route.'
+      : 'Starting point selected. Describe what you want to do to build a route.')
+    return nextOrigin
   }
 
-  function useSimulatedLocation() {
-    changeLocation('plaza-armas')
-    setLocationState('simulated')
-    setNotice('Using a simulated location near Plaza de Armas.')
+  async function startMapPointSelection() {
+    if (!mapsApiKey) {
+      setNotice('Configure a Google Maps key before choosing a point on the map.')
+      return
+    }
+    mapPointSelectionRef.current = true
+    setLocationState('picking')
+    setNotice('Tap a point on the map to use it as your starting point.')
+    try {
+      await ensureGoogleMap(origin?.coordinates ?? DEFAULT_MAP_CENTER, origin ? SELECTED_POINT_ZOOM : DEFAULT_MAP_ZOOM)
+    } catch (error) {
+      mapPointSelectionRef.current = false
+      setLocationState('idle')
+      setNotice(getGoogleErrorMessage(error))
+    }
   }
 
   function requestDeviceLocation() {
     if (!navigator.geolocation) {
       setLocationState('unsupported')
-      setNotice('This browser does not support location access. You can choose a point manually.')
+      setNotice('This browser does not support location access. Choose a point on the map instead.')
       return
     }
 
+    mapPointSelectionRef.current = false
     setLocationState('requesting')
     setNotice('Waiting for permission to access your location…')
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        const nextOrigin: TripLocation = {
-          id: 'current-location',
-          name: 'My current location',
-          detail: 'Device location',
-          x: 48,
-          y: 53,
-          coordinates: { lat: coords.latitude, lng: coords.longitude },
-        }
-        setLocationState('granted')
-        setSelectedLocationId(nextOrigin.id)
-        setOrigin(nextOrigin)
-        setPlan({ ...getMockItinerary(), origin: nextOrigin, city: 'Near you' })
-        setReplacementApplied(false)
-        setActiveStopIndex(0)
-        setRealPlanState('idle')
-        if (googleMapRef.current && nextOrigin.coordinates) moveGoogleMap(googleMapRef.current, nextOrigin.coordinates)
-        setNotice('Location confirmed. You can now find real places nearby.')
+        void selectOriginFromPoint({ lat: coords.latitude, lng: coords.longitude }, 'device').catch((error) => {
+          setLocationState('idle')
+          setNotice(getGoogleErrorMessage(error))
+        })
       },
       () => {
         setLocationState('denied')
-        setNotice('Location permission was not granted. You can choose a point manually or use the simulated location.')
+        setNotice('Location permission was not granted. Choose a point on the map instead.')
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     )
   }
 
-  async function fetchRealPlan(request = plannerRequest ?? undefined, title = plan.title) {
-    if (!origin.coordinates) {
-      throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
-    }
-    const controller = await ensureGoogleMap(origin.coordinates)
-    return buildGoogleTripPlan(
-      controller,
-      origin,
-      title,
-      origin.detail,
-      request,
-    )
+  async function fetchRealPlan(request = plannerRequest ?? undefined, title = plan?.title ?? 'A walk near your starting point') {
+    if (!origin) throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
+    const controller = await ensureGoogleMap(origin.coordinates, SELECTED_POINT_ZOOM)
+    return buildGoogleTripPlan(controller, origin, title, origin.detail, request)
   }
 
   async function searchRealPlan() {
-    if (!mapsApiKey) {
-      setNotice('Add VITE_GOOGLE_MAPS_API_KEY to your local environment to query real places.')
+    if (!origin) {
+      setNotice('Choose your current location or a point on the map first.')
       return
     }
-    if (!origin.coordinates) {
-      setNotice('Confirm a starting point before searching for real places.')
+    if (!mapsApiKey) {
+      setNotice('Configure a Google Maps key to build a real route.')
       return
     }
 
     setRealPlanState('loading')
     setNotice('Querying places, opening hours, and walking route…')
+    clearGoogleMapRoute(googleMapRef.current!)
+    setPlan(null)
     try {
       const realPlan = await fetchRealPlan()
       setPlan(realPlan)
-      setReplacementApplied(false)
       setActiveStopIndex(0)
       setRealPlanState('ready')
       setNotice(realPlan.routeWarnings?.length
@@ -326,39 +311,32 @@ function App() {
       setNotice('Tell Buki what you would like to do.')
       return
     }
-    if (isMock) {
-      setNotice(plan.source === 'google-maps'
-        ? 'Intent updated. Find real places again to apply the new criteria.'
-        : 'Intent saved. This plan still uses simulated data.')
+    if (!origin) {
+      setNotice('Choose your current location or a point on the map before building a route.')
+      return
+    }
+    if (!mapsApiKey) {
+      setNotice('Configure a Google Maps key before building a route.')
       return
     }
 
-    setServerState('checking')
     setIsPlanning(true)
     setNotice('Interpreting your request…')
     try {
       const planner = await requestLlmPlan(nextIntent)
       setPlannerRequest(planner.request)
       setIntent(planner.intent)
-
-      if (!mapsApiKey || !origin.coordinates) {
-        setPlan((currentPlan) => ({ ...currentPlan, title: planner.title }))
-        setNotice(`${planner.explanation} Add a Maps key to build the real route.`)
-        return
-      }
-
       setRealPlanState('loading')
       setNotice('Finding real places and calculating the walking route…')
+      clearGoogleMapRoute(googleMapRef.current!)
+      setPlan(null)
       const realPlan = await fetchRealPlan(planner.request, planner.title)
       setPlan(realPlan)
-      setReplacementApplied(false)
       setActiveStopIndex(0)
       setRealPlanState('ready')
-      setServerState('online')
       setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
     } catch (error) {
       setRealPlanState('error')
-      setServerState('offline')
       setNotice(getPlannerErrorMessage(error))
     } finally {
       setIsPlanning(false)
@@ -366,6 +344,10 @@ function App() {
   }
 
   function moveToNextStop() {
+    if (!availableStops.length) {
+      setNotice('Build a real route before starting a leg.')
+      return
+    }
     if (activeStopIndex >= availableStops.length - 1) {
       setNotice('You reached the end of the route. You can return to any stop in the plan.')
       return
@@ -375,25 +357,16 @@ function App() {
     setNotice(`Next: ${availableStops[nextIndex].place.name}.`)
   }
 
-  function applyReplacement() {
-    setReplacementApplied(true)
-    setNotice(`Replacement applied: ${MOCK_ALTERNATIVE.place.name}.`)
-  }
-
-  function undoReplacement() {
-    setReplacementApplied(false)
-    setNotice('Replacement undone. The original stop is marked as closed again.')
-  }
-
-  function serializePlanData(currentPlan: typeof plan, currentStops: typeof effectiveStops, currentWalkingMinutes: number) {
+  function serializePlanData(currentPlan: TripPlan) {
     return {
+      status: 'ok',
       title: currentPlan.title,
       city: currentPlan.city,
-      source: currentPlan.source ?? 'mock',
-      checkedAt: currentPlan.checkedAt ?? 'Simulated data',
+      source: currentPlan.source,
+      checkedAt: currentPlan.checkedAt,
       origin: { id: currentPlan.origin.id, name: currentPlan.origin.name, detail: currentPlan.origin.detail },
-      totalWalkingMinutes: currentWalkingMinutes,
-      stops: currentStops.map((stop) => ({
+      totalWalkingMinutes: currentPlan.totalWalkingMinutes,
+      stops: currentPlan.stops.map((stop) => ({
         id: stop.place.id,
         sequence: stop.sequence,
         name: stop.place.name,
@@ -408,40 +381,41 @@ function App() {
   }
 
   function serializePlan() {
-    return serializePlanData(plan, effectiveStops, totalWalkingMinutes)
+    if (plan) return serializePlanData(plan)
+    return {
+      status: origin ? 'ready_to_plan' : 'needs_origin',
+      origin: origin ? { id: origin.id, name: origin.name, detail: origin.detail } : null,
+      stops: [],
+    }
   }
 
   function findToolStop(input: Record<string, unknown>) {
     const stopId = typeof input.stopId === 'string' ? input.stopId : ''
-    return effectiveStops.find((stop) => stop.id === stopId || stop.place.id === stopId)
+    return stops.find((stop) => stop.id === stopId || stop.place.id === stopId)
   }
 
   const webMcpActions: BukiWebMcpActions = {
     async searchNearbyPlaces(input) {
-      if (mapsApiKey && origin.coordinates) {
-        try {
-          const realPlan = await fetchRealPlan()
-          setPlan(realPlan)
-          setReplacementApplied(false)
-          setActiveStopIndex(0)
-          setRealPlanState('ready')
-          return { status: 'ok', source: 'google-maps', itinerary: serializePlanData(realPlan, realPlan.stops, realPlan.totalWalkingMinutes) }
-        } catch (error) {
-          return { status: 'error', message: getGoogleErrorMessage(error), itinerary: serializePlan() }
-        }
-      }
-      const requestedKind = typeof input.kind === 'string' ? input.kind : undefined
-      return {
-        status: 'ok',
-        source: 'mock',
-        message: 'Google Maps is not configured; simulated data was returned.',
-        places: effectiveStops
-          .filter((stop) => !requestedKind || stop.place.kind === requestedKind)
-          .map((stop) => ({ id: stop.place.id, name: stop.place.name, kind: stop.place.kind, availability: stop.place.availability })),
+      if (!origin) return { status: 'needs_origin', message: 'The person must select a real starting point first.' }
+      if (!mapsApiKey) return { status: 'unavailable', message: 'Google Maps is not configured.' }
+      const requestedKind = typeof input.kind === 'string' && ['food', 'culture', 'view'].includes(input.kind)
+        ? input.kind as PlaceKind
+        : undefined
+      const request = requestedKind
+        ? { ...(plannerRequest ?? { availableMinutes: 180, maxWalkMinutes: 20, stopCount: 3 }), interests: [requestedKind] as PlaceKind[] }
+        : plannerRequest ?? undefined
+      try {
+        const realPlan = await fetchRealPlan(request)
+        setPlan(realPlan)
+        setActiveStopIndex(0)
+        setRealPlanState('ready')
+        return { status: 'ok', source: 'google-maps', itinerary: serializePlanData(realPlan) }
+      } catch (error) {
+        return { status: 'error', message: getGoogleErrorMessage(error), itinerary: serializePlan() }
       }
     },
     getPlaceStatus(input) {
-      const stop = findToolStop(input)
+      const stop = findToolStop({ stopId: input.placeId })
       if (!stop) throw new Error('PLACE_NOT_FOUND')
       return {
         status: 'ok',
@@ -455,28 +429,21 @@ function App() {
     computeWalkingRoute(input) {
       const stop = findToolStop({ stopId: input.toPlaceId })
       if (!stop) throw new Error('DESTINATION_NOT_FOUND')
-      return { status: 'ok', route: stop.walkFromPrevious, source: plan.source ?? 'mock' }
+      return { status: 'ok', route: stop.walkFromPrevious, source: 'google-maps' }
     },
     getItinerary: serializePlan,
     proposeItinerary(input) {
       const requestedIntent = typeof input.intent === 'string' ? input.intent : intent
-      setNotice('An agent prepared a proposal visible on the current plan.')
+      setNotice('An agent prepared a proposal visible to the person; it has not been applied.')
       return { status: 'proposal', intent: requestedIntent, itinerary: serializePlan(), applied: false }
     },
     replaceStop(input) {
       const stop = findToolStop(input)
       if (!stop) throw new Error('STOP_NOT_FOUND')
-      if (!usingMockRepair || stop.id !== MOCK_ALTERNATIVE.replacesStopId) {
-        return { status: 'unavailable', message: 'This phase only has a simulated replacement for the culture stop.' }
-      }
-      const shouldApply = input.apply === true
-      if (shouldApply) applyReplacement()
-      else setNotice('An agent proposed replacing the stop; it has not been applied yet.')
       return {
-        status: shouldApply ? 'applied' : 'proposal',
-        replacedStopId: stop.id,
-        replacement: MOCK_ALTERNATIVE.place,
-        applied: shouldApply,
+        status: 'unavailable',
+        message: 'Real replacement search is not implemented yet, so Buki will not invent a replacement.',
+        stopId: stop.id,
       }
     },
     focusStop(input) {
@@ -488,19 +455,17 @@ function App() {
       setNotice(`Next stop focused: ${stop.place.name}.`)
       return { status: 'ok', focusedStopId: stop.id, name: stop.place.name }
     },
-    setOrigin(input) {
-      const locationId = typeof input.locationId === 'string' ? input.locationId : ''
-      if (locationId === 'current-location') return { status: 'needs_user_consent', message: 'The person must authorize device location access.' }
-      const location = MOCK_LOCATIONS.find((item) => item.id === locationId)
-      if (!location) throw new Error('LOCATION_NOT_FOUND')
-      changeLocation(locationId)
-      return { status: 'ok', origin: { id: location.id, name: location.name, detail: location.detail } }
+    async setOrigin(input) {
+      const coordinates = pointFromToolInput(input)
+      if (!coordinates) throw new Error('VALID_LATITUDE_AND_LONGITUDE_REQUIRED')
+      const selectedOrigin = await selectOriginFromPoint(coordinates, 'agent')
+      return { status: 'ok', origin: { id: selectedOrigin.id, name: selectedOrigin.name, detail: selectedOrigin.detail } }
     },
     updateIntent(input) {
       const nextIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
       if (!nextIntent) throw new Error('INTENT_REQUIRED')
       setIntent(nextIntent)
-      setNotice('Intent updated by an agent; the plan has not been recalculated yet.')
+      setNotice('Intent updated by an agent; the person must submit it to build a real route.')
       return { status: 'ok', intent: nextIntent, planUpdated: false }
     },
     advanceToNextStop() {
@@ -512,9 +477,9 @@ function App() {
       return {
         app: 'buki',
         webmcp: Boolean(document.modelContext),
-        mapSource: plan.source ?? 'mock',
-        origin: plan.origin.name,
-        stopCount: effectiveStops.length,
+        mapSource: plan?.source ?? 'pending',
+        origin: origin?.name ?? null,
+        stopCount: stops.length,
         manualControlsAvailable: true,
       }
     },
@@ -524,19 +489,14 @@ function App() {
 
   return (
     <main className={`app-shell ${mapState === 'ready' ? 'has-real-map' : ''}`}>
-      <section className={`map-stage ${mapState === 'ready' ? 'is-google-map' : ''}`} aria-label={mapState === 'ready' ? 'Real route map' : 'Simulated route map'}>
+      <section className={`map-stage ${mapState === 'ready' ? 'is-google-map' : ''}`} aria-label="Google Maps">
         <div ref={mapContainerRef} className={`google-map-canvas ${mapState === 'ready' ? 'is-visible' : 'is-hidden'}`} aria-hidden={mapState !== 'ready'} />
-        <div className="map-grid" aria-hidden="true" />
-        <svg className="map-streets" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M-5 24 C24 17 41 33 105 12" />
-          <path d="M-8 77 C19 58 42 83 108 63" />
-          <path d="M19 -5 C24 26 18 52 39 105" />
-          <path d="M68 -4 C59 27 83 52 70 105" />
-          <path d="M-4 50 C31 43 65 56 105 43" />
-        </svg>
-        <svg className="map-route" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <polyline points={routePoints} />
-        </svg>
+        {mapState !== 'ready' && (
+          <div className="map-unavailable">
+            <strong>{mapState === 'loading' ? 'Loading Google Maps…' : 'Google Maps is unavailable'}</strong>
+            <span>{mapError || 'A valid Maps key is required to select a real starting point.'}</span>
+          </div>
+        )}
 
         <div className="map-header">
           <div className="brand-lockup">
@@ -555,50 +515,16 @@ function App() {
 
         <div className="map-location-label">
           <span className="pulse-dot" />
-          {plan.origin.name}
-          <small>{plan.origin.detail}</small>
+          {origin ? origin.name : 'Choose a starting point'}
+          <small>{origin ? origin.detail : 'Use your location or tap a pin on the map.'}</small>
         </div>
-
-        {mapState !== 'ready' && (
-          <>
-            <div
-              className="map-marker map-origin"
-              style={{ left: `${plan.origin.x}%`, top: `${plan.origin.y}%` }}
-              aria-label={`Starting point: ${plan.origin.name}`}
-            >
-              <span className="origin-ping" />
-              <span className="origin-core" />
-            </div>
-
-            {effectiveStops.map((stop) => {
-              const isClosed = stop.place.availability === 'closed'
-              const isCurrent = currentStop?.id === stop.id
-              return (
-                <div
-                  className={`map-marker map-stop ${isClosed ? 'is-closed' : ''} ${isCurrent ? 'is-current' : ''}`}
-                  key={stop.id}
-                  style={{ left: `${stop.place.x}%`, top: `${stop.place.y}%` }}
-                  aria-label={`${stop.sequence}. ${stop.place.name}`}
-                >
-                  <span className="stop-pin">{stop.sequence}</span>
-                  <span className="map-stop-name">{stop.place.name}</span>
-                </div>
-              )
-            })}
-          </>
-        )}
 
         <div className="map-footer">
           <div>
-            <strong>{effectiveStops.length} stops</strong>
-            <span>·</span>
-            <strong>{totalWalkingMinutes} min walking</strong>
+            <strong>{plan ? `${stops.length} stops` : 'No route yet'}</strong>
+            {plan && <><span>·</span><strong>{totalWalkingMinutes} min walking</strong></>}
           </div>
-          <span>
-            {plan.source === 'google-maps'
-              ? `${plan.checkedAt ?? 'Google Maps'}${plan.routeWarnings?.length ? ' · Review warnings' : ''}`
-              : mapError || 'Simulated fallback · add a key for real data'}
-          </span>
+          <span>{plan ? `${plan.checkedAt}${plan.routeWarnings?.length ? ' · Review warnings' : ''}` : 'Real data starts after you choose a point.'}</span>
         </div>
       </section>
 
@@ -607,77 +533,59 @@ function App() {
         <div className="plan-content">
           <header className="plan-header">
             <div>
-              <p className="eyebrow">Your plan for this afternoon</p>
-              <h1 id="plan-title">{plan.title}</h1>
-            <p className="plan-location">{plan.city} · {totalWalkingMinutes} min walking</p>
+              <p className="eyebrow">Your walking plan</p>
+              <h1 id="plan-title">{plan?.title ?? 'Start with a real location'}</h1>
+              <p className="plan-location">{plan ? `${plan.city} · ${totalWalkingMinutes} min walking` : 'Use your current location or drop a pin anywhere on the map.'}</p>
             </div>
-            <span className={`plan-status ${plan.source === 'google-maps' ? 'is-real' : ''}`}>
-              {plan.source === 'google-maps' ? 'Real' : 'Mock'}
-            </span>
+            <span className={`plan-status ${plan ? 'is-real' : ''}`}>{plan ? 'Real' : 'Waiting for origin'}</span>
           </header>
-
-          <form className="intent-form" onSubmit={submitIntent}>
-            <label htmlFor="intent">What do you want to do?</label>
-            <textarea
-              id="intent"
-              value={intent}
-              onChange={(event) => setIntent(event.target.value)}
-              rows={3}
-            />
-            <button className="primary-button" type="submit" disabled={isPlanning}>
-              {isPlanning ? 'Building your plan…' : 'Update intent'} <span aria-hidden="true">↗</span>
-            </button>
-          </form>
 
           <section className="location-card" aria-labelledby="location-title">
             <div className="section-heading">
               <div>
                 <p className="section-kicker">Starting point</p>
-                <h2 id="location-title">Where are you starting?</h2>
+                <h2 id="location-title">Choose where you are</h2>
               </div>
               <span className="location-icon" aria-hidden="true">⌖</span>
             </div>
-            <select
-              aria-label="Select starting point"
-              value={selectedLocationId}
-              onChange={(event) => changeLocation(event.target.value)}
-            >
-              {selectedLocationId === 'current-location' && (
-                <option value="current-location">My current location · device</option>
-              )}
-              {MOCK_LOCATIONS.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name} · {location.detail}
-                </option>
-              ))}
-            </select>
+            <p className="origin-summary">
+              {origin ? <><strong>{origin.name}</strong><span>{origin.detail}</span></> : 'No starting point selected yet.'}
+            </p>
             <div className="location-actions">
-              <button className="text-button" type="button" onClick={requestDeviceLocation} disabled={locationState === 'requesting'}>
-                <span aria-hidden="true">◎</span> {locationState === 'requesting' ? 'Waiting for permission…' : 'Use my real location'}
+              <button className="text-button" type="button" onClick={requestDeviceLocation} disabled={locationState === 'requesting' || locationState === 'resolving'}>
+                <span aria-hidden="true">◎</span> {locationState === 'requesting' ? 'Waiting for permission…' : 'Use my current location'}
               </button>
-              <button className="text-button secondary" type="button" onClick={useSimulatedLocation}>
-                Use simulated location
+              <button className="text-button secondary" type="button" onClick={() => void startMapPointSelection()} disabled={mapState !== 'ready' || locationState === 'resolving'}>
+                {locationState === 'picking' ? 'Tap the map to set the point' : 'Choose a point on the map'}
               </button>
             </div>
             {mapsApiKey ? (
-              <button className="real-search-button" type="button" onClick={() => void searchRealPlan()} disabled={realPlanState === 'loading'}>
-                <span>{realPlanState === 'loading' ? 'Querying Google Maps…' : 'Find real places nearby'}</span>
+              <button className="real-search-button" type="button" onClick={() => void searchRealPlan()} disabled={!origin || realPlanState === 'loading' || isPlanning}>
+                <span>{realPlanState === 'loading' ? 'Querying Google Maps…' : 'Build a real route nearby'}</span>
                 <span aria-hidden="true">↗</span>
               </button>
             ) : (
-              <p className="key-hint">To activate the real map, configure <code>VITE_GOOGLE_MAPS_API_KEY</code>.</p>
+              <p className="key-hint">Configure <code>VITE_GOOGLE_MAPS_API_KEY</code> to choose a real point and build a route.</p>
             )}
           </section>
 
-          {notice && <p className="notice" aria-live="polite">{notice}</p>}
-          {locationState === 'denied' && <p className="state-hint">Location permission denied: continuing with the manual point.</p>}
-          {locationState === 'unsupported' && <p className="state-hint">This browser does not expose geolocation: continuing with the manual point.</p>}
+          <form className="intent-form" onSubmit={submitIntent}>
+            <label htmlFor="intent">What do you want to do?</label>
+            <textarea id="intent" value={intent} onChange={(event) => setIntent(event.target.value)} rows={3} />
+            <button className="primary-button" type="submit" disabled={isPlanning || !origin}>
+              {isPlanning ? 'Building your plan…' : 'Build a real plan'} <span aria-hidden="true">↗</span>
+            </button>
+          </form>
 
-          {currentStop && (
+          {notice && <p className="notice" aria-live="polite">{notice}</p>}
+          {locationState === 'denied' && <p className="state-hint">Location permission was denied. Choose a point on the map instead.</p>}
+          {locationState === 'unsupported' && <p className="state-hint">This browser does not expose geolocation. Choose a point on the map instead.</p>}
+
+          {plan && currentStop && (
             <section className="next-stop-card" aria-labelledby="next-stop-title">
               <div className="next-stop-topline">
-            <p className="section-kicker">Next stop</p>
-                <span>{currentStop.sequence.toString().padStart(2, '0')} / {effectiveStops.length.toString().padStart(2, '0')}</span>
+                <p className="section-kicker">Next stop</p>
+                <span>{currentStop.sequence.toString().padStart(2, '0')} / {stops.length.toString().padStart(2, '0')}</span>
               </div>
               <h2 id="next-stop-title">{currentStop.place.name}</h2>
               <p>{currentStop.place.summary}</p>
@@ -692,39 +600,35 @@ function App() {
             </section>
           )}
 
-          <section className="stops-section" aria-labelledby="stops-title">
-            <div className="section-heading stops-heading">
-              <div>
-                <p className="section-kicker">Suggested route</p>
-                <h2 id="stops-title">{plan.source === 'google-maps' ? 'Places near you' : 'Three relaxed stops'}</h2>
+          {plan ? (
+            <section className="stops-section" aria-labelledby="stops-title">
+              <div className="section-heading stops-heading">
+                <div>
+                  <p className="section-kicker">Suggested route</p>
+                  <h2 id="stops-title">Places near you</h2>
+                </div>
+                <span className="walking-limit">Max. {plannerRequest?.maxWalkMinutes ?? '—'} min / leg</span>
               </div>
-              <span className="walking-limit">Max. 20 min / leg</span>
-            </div>
+              <div className="stops-list">
+                {stops.map((stop, index) => (
+                  <StopCard key={stop.id} stop={stop} isCurrent={currentStop?.id === stop.id} showWalking={index > 0 || Boolean(stop.walkFromPrevious)} />
+                ))}
+              </div>
+            </section>
+          ) : (
+            <section className="empty-plan" aria-labelledby="empty-plan-title">
+              <p className="section-kicker">Real-data flow</p>
+              <h2 id="empty-plan-title">Choose a point, then describe your plan.</h2>
+              <p>Buki will use the LLM to understand your request and Google Maps to find the actual places and walking route.</p>
+            </section>
+          )}
 
-            <div className="stops-list">
-              {effectiveStops.map((stop, index) => (
-                <StopCard
-                  key={`${stop.id}-${replacementApplied ? 'replacement' : 'original'}`}
-                  stop={stop}
-                  isCurrent={currentStop?.id === stop.id}
-                  isClosed={stop.place.availability === 'closed'}
-                  replacementApplied={usingMockRepair && replacementApplied && stop.id === MOCK_ALTERNATIVE.replacesStopId}
-                  onApplyReplacement={applyReplacement}
-                  onUndoReplacement={undoReplacement}
-                  showWalking={index > 0 || Boolean(stop.walkFromPrevious)}
-                />
-              ))}
-            </div>
-          </section>
-
-          <footer className="mock-footer">
-            <span className={`mock-dot ${plan.source === 'google-maps' ? 'is-real' : ''}`} />
-            <span>
-              {plan.source === 'google-maps'
-                ? `${plan.checkedAt ?? 'Google Maps'} · Data may change.`
-                : `Simulated data for validating the route${mapsApiKey ? '; use the Google Maps button to query real data.' : '.'}`}
-            </span>
-          </footer>
+          {plan && (
+            <footer className="data-footer">
+              <span className="data-dot" />
+              <span>{plan.checkedAt} · Data may change.</span>
+            </footer>
+          )}
         </div>
       </section>
       <WebMcpInspector
@@ -743,23 +647,12 @@ function App() {
 interface StopCardProps {
   stop: TripStop
   isCurrent: boolean
-  isClosed: boolean
-  replacementApplied: boolean
-  onApplyReplacement: () => void
-  onUndoReplacement: () => void
   showWalking: boolean
 }
 
-function StopCard({
-  stop,
-  isCurrent,
-  isClosed,
-  replacementApplied,
-  onApplyReplacement,
-  onUndoReplacement,
-  showWalking,
-  }: StopCardProps) {
+function StopCard({ stop, isCurrent, showWalking }: StopCardProps) {
   const place: TripPlace = stop.place
+  const isClosed = place.availability === 'closed'
 
   return (
     <div className="stop-group">
@@ -774,9 +667,7 @@ function StopCard({
         <div className="stop-card-body">
           <div className="stop-card-topline">
             <span className="stop-kind">{KIND_SYMBOLS[place.kind]} {KIND_LABELS[place.kind]}</span>
-            <span className={`availability availability-${place.availability}`}>
-              {place.availabilityLabel}
-            </span>
+            <span className={`availability availability-${place.availability}`}>{place.availabilityLabel}</span>
           </div>
           <h3>{place.name}</h3>
           <p>{place.summary}</p>
@@ -784,33 +675,8 @@ function StopCard({
             <span>{place.address}</span>
             <span>{place.checkedAt}</span>
           </div>
-          {place.mapsUrl && (
-            <a className="maps-link" href={place.mapsUrl} target="_blank" rel="noreferrer">
-              View on Google Maps ↗
-            </a>
-          )}
-
-          {isClosed && !replacementApplied && (
-            <div className="repair-box">
-              <div>
-                <strong>This stop changed</strong>
-                <span>We found a cultural replacement 7 min away.</span>
-              </div>
-              <button className="repair-button" type="button" onClick={onApplyReplacement}>
-                View replacement <span aria-hidden="true">↗</span>
-              </button>
-            </div>
-          )}
-
-          {replacementApplied && (
-            <div className="replacement-box">
-              <div>
-                <strong>Replacement applied</strong>
-                <span>{MOCK_ALTERNATIVE.reason}</span>
-              </div>
-              <button className="undo-button" type="button" onClick={onUndoReplacement}>Undo</button>
-            </div>
-          )}
+          {place.mapsUrl && <a className="maps-link" href={place.mapsUrl} target="_blank" rel="noreferrer">View on Google Maps ↗</a>}
+          {isClosed && <p className="availability-note">This place is currently unavailable. Buki will not invent a replacement.</p>}
         </div>
       </article>
     </div>

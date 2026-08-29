@@ -1,6 +1,6 @@
 # Buki — Build Plan
 
-Status: Phase 3 implemented; WebMCP foundation included; validation with a restricted Google Maps key is pending.
+Status: real-data flow implemented; WebMCP foundation included.
 Initial validation scenario: Santiago Center, Chile.
 Base document: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
@@ -107,7 +107,7 @@ Google provides business status and current opening fields in Places, and `WALK`
 - Field masks to request only the necessary fields.
 - Search for candidates first and request details only for finalists.
 - Never call an API for every keystroke.
-- A fake adapter for tests.
+- Keep automated tests isolated from paid provider calls.
 - Do not download photos, reviews, or advanced data in the first route.
 
 Mapbox, OpenStreetMap, and OSRM remain candidates for later evaluation. Multiple providers will not be implemented in parallel during the MVP.
@@ -145,34 +145,34 @@ Steps:
 4. Create the React, Vite, and TypeScript application at the repository root.
 5. Create Vercel server-side functions in `api/` for health checks and future LLM orchestration.
 6. Define environment variables for the server-side LLM, frontend Google Maps, and limits.
-7. Define a `mock` mode for development and testing.
+7. Define real-data configuration for the server-side LLM and browser Google Maps integrations.
 8. Verify that Buki's contract and documentation remain the active reference.
 
-Phase output: Buki starts locally in simulated mode; Vercel functions define the LLM server-side boundary and Google Maps is prepared to run from the frontend. There is no separate FastAPI service.
+Phase output: Buki starts locally without a prebuilt itinerary; Vercel functions define the LLM server-side boundary and Google Maps is prepared to run from the frontend. There is no separate FastAPI service.
 
-### Phase 2 — Mobile experience with simulated data
+### Phase 2 — Mobile experience with real starting points
 
-Status: complete in mock mode.
+Status: complete.
 
-Objective: validate that the experience is understandable before paying for APIs.
+Objective: validate that the mobile flow clearly collects a real starting point and intent.
 
 Steps:
 
 1. Create a mobile-first screen with the map occupying most of the viewport.
 2. Add a text box for user intent.
-3. Add simulated current location and manual point selection.
+3. Add device geolocation and manual map-point selection.
 4. Show a bottom panel with the plan.
 5. Show two or three stops.
 6. Show walking time between stops.
 7. Show the “Next stop” card.
-8. Show a closed stop and a simulated replacement.
+8. Show provider availability and clearly state when a verified replacement is not available.
 9. Create a desktop view with the map and plan side by side.
 
-Phase output: a person can understand the complete flow without knowing WebMCP or the architecture.
+Phase output: a person can understand the complete real-data flow without knowing WebMCP or the architecture.
 
 ### Phase 3 — Real route with Google Maps
 
-Status: implemented with a mock fallback; Google validation is pending a valid restricted key.
+Status: implemented with Google Maps as the only runtime source of geographic data.
 
 Objective: replace synthetic data with real geographic data in the selected city.
 
@@ -197,8 +197,8 @@ Current implementation:
 - `Place.isOpen()` and business status are shown as open, closed, or unknown.
 - `Route.computeRoutes()` calculates a `WALKING` route with up to three stops and draws it inside Buki using the current Routes Library.
 - A button requests device geolocation with browser consent; if denied, the manual point is kept.
-- Without a key, permission, or after an API error, the experience falls back to mock data and explains the reason in the interface.
-- The manual intent form sends natural-language requests to the Vercel function when `VITE_BUKI_MODE=real`.
+- Without a key, permission, or after an API error, the experience explains that real data is unavailable and does not show an invented route.
+- The manual intent form sends natural-language requests to the Vercel function when `BUKI_MODE=real` is configured for that function.
 - The server-side LLM adapter returns structured interests, time, walking, and stop-count constraints without inventing geographic facts.
 - Google Maps uses those constraints to search real categories, calculate the route, and reject routes that exceed the requested limits.
 

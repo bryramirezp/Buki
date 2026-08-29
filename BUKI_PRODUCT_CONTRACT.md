@@ -78,7 +78,7 @@ Buki must:
 - Repair of an unavailable stop.
 - WebMCP so an agent can inspect, propose, and repair the plan.
 - Equivalent manual controls when WebMCP is unavailable.
-- Simulated data for automated tests and real data for the field test.
+- Real provider data for the running experience and field test; unavailable data is stated explicitly rather than substituted with invented places.
 
 ### Explicitly out of the MVP
 

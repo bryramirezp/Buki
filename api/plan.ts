@@ -25,15 +25,6 @@ type LlmPayload = {
 const DEFAULT_INTERESTS: PlaceKind[] = ['food', 'culture', 'view']
 const ALLOWED_INTERESTS = new Set<PlaceKind>(DEFAULT_INTERESTS)
 
-function mockPlan(intent: string) {
-  return {
-    mode: 'mock',
-    intent,
-    status: 'ready',
-    stops: [],
-  }
-}
-
 function clampNumber(value: unknown, fallback: number, minimum: number, maximum: number) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
   return Math.min(maximum, Math.max(minimum, Math.round(value)))
@@ -148,8 +139,8 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return response.status(400).json({ error: 'intent is required.' })
   }
 
-  if ((process.env.BUKI_MODE ?? 'mock') === 'mock') {
-    return response.status(200).json(mockPlan(input.intent.trim()))
+  if ((process.env.BUKI_MODE ?? 'real') !== 'real') {
+    return response.status(503).json({ error: 'LLM planning is disabled. Set BUKI_MODE=real.' })
   }
 
   try {

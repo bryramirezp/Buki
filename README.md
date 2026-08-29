@@ -11,13 +11,9 @@ npm install
 npm run dev
 ```
 
-To run the Vercel functions locally as well:
-
-```powershell
-npx vercel dev
-```
-
 Copy `.env.example` to `.env` and fill in the values you need. Never commit `.env` or expose server-side secrets with a `VITE_` prefix.
+
+`npm run dev` runs the Vite interface locally. The `/api/*` functions are Vercel functions and are available after deployment; running the interface locally does not require signing in to Vercel.
 
 ## Project documents
 
@@ -27,17 +23,16 @@ Copy `.env.example` to `.env` and fill in the values you need. Never commit `.en
 
 ## Current state
 
-Phase 4 has its first local slice implemented on top of the Phase 3 Google Maps integration and WebMCP foundation. Buki interprets natural-language intent through a server-side LLM adapter, then uses Google Maps for real places and walking routes, with a mock fallback and a visible inspector for 11 tools.
+Phase 4 has its first local slice implemented on top of the Phase 3 Google Maps integration and WebMCP foundation. Buki starts with no fictional location or itinerary: a person selects their device location or drops a point anywhere on the map, the LLM interprets their intent, and Google Maps supplies the real places and walking route. The page also includes a visible inspector for 11 tools.
 
 ## Configuration
 
 ```text
-VITE_BUKI_MODE=mock
 VITE_BUKI_API_URL=
 VITE_GOOGLE_MAPS_API_KEY=
 
 # Server-side only; never use VITE_ for these values.
-BUKI_MODE=mock
+BUKI_MODE=real
 LLM_API_KEY=
 LLM_API_URL=
 LLM_MODEL=

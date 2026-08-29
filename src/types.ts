@@ -61,9 +61,7 @@ export interface TripLocation {
   id: string
   name: string
   detail: string
-  x: number
-  y: number
-  coordinates?: GeoPoint
+  coordinates: GeoPoint
 }
 
 export interface TripPlace {
@@ -75,9 +73,7 @@ export interface TripPlace {
   availability: PlaceAvailability
   availabilityLabel: string
   checkedAt: string
-  x: number
-  y: number
-  coordinates?: GeoPoint
+  coordinates: GeoPoint
   mapsUrl?: string
 }
 
@@ -102,14 +98,7 @@ export interface TripPlan {
   origin: TripLocation
   totalWalkingMinutes: number
   stops: TripStop[]
-  source?: 'mock' | 'google-maps'
-  checkedAt?: string
+  source: 'google-maps'
+  checkedAt: string
   routeWarnings?: string[]
-}
-
-export interface PlaceAlternative {
-  replacesStopId: string
-  place: TripPlace
-  walkFromPrevious: WalkingSegment
-  reason: string
 }
