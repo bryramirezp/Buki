@@ -2,7 +2,7 @@
 
 **Turn “what should I do today?” into a real, walkable itinerary.**
 
-[Try the live WebMCP experience](https://buki-iota.vercel.app/)
+[Try the live WebMCP experience](https://buki-sandy.vercel.app/)
 
 Buki starts with a real location and a natural-language idea—not a fictional route. It asks only for the details that make a plan practical, then uses Google Maps to find real nearby places and calculate a walking route.
 
@@ -117,7 +117,7 @@ LLM_FALLBACK_MODEL=cohere/north-mini-code:free
 
 `VITE_GOOGLE_MAPS_API_KEY` is intentionally available to the browser because the Google Maps JavaScript API loads there. Treat it as a public identifier, not a secret: in Google Cloud restrict it to Buki's allowed HTTP referrers, only the Maps APIs Buki needs, and a bounded quota. `LLM_API_KEY` must remain server-side and must never use a `VITE_` prefix.
 
-`VITE_BUKI_API_URL` and `VITE_GOOGLE_MAPS_MAP_ID` are optional. Leaving the API URL empty uses same-origin `/api/plan` locally and after deployment. `BUKI_MODE`, `BUKI_ALLOWED_ORIGINS`, `BUKI_RATE_LIMIT_MAX`, and `BUKI_RATE_LIMIT_WINDOW_MS` are server-side operational overrides with defaults; set `BUKI_ALLOWED_ORIGINS=https://buki-iota.vercel.app` only in Vercel Production. The in-process limit is a first barrier for a small public prototype; production deployments must also configure distributed rate limiting, provider spend caps, Google Maps HTTP-referrer restrictions, API restrictions, and daily quotas.
+`VITE_BUKI_API_URL` and `VITE_GOOGLE_MAPS_MAP_ID` are optional. Leaving the API URL empty uses same-origin `/api/plan` locally and after deployment. `BUKI_MODE`, `BUKI_ALLOWED_ORIGINS`, `BUKI_RATE_LIMIT_MAX`, and `BUKI_RATE_LIMIT_WINDOW_MS` are server-side operational overrides with defaults; set `BUKI_ALLOWED_ORIGINS=https://buki-sandy.vercel.app` only in Vercel Production. The in-process limit is a first barrier for a small public prototype; production deployments must also configure distributed rate limiting, provider spend caps, Google Maps HTTP-referrer restrictions, API restrictions, and daily quotas.
 
 ## Test and build
 
@@ -133,7 +133,7 @@ The suite covers deterministic candidate selection, route-limit decisions, activ
 
 Import the repository with root directory `.`. Vercel detects the Vite app and deploys `api/*.ts` as functions. Configure the environment variables above, keep all LLM variables server-side, and leave `VITE_BUKI_API_URL` empty when the API is served from the same deployment.
 
-Before publishing, verify the full flow in the deployed app and configure rate limits and spending controls in the hosting, LLM, and Google Cloud consoles. After this version is deployed, Buki's [Privacy Policy](https://buki-iota.vercel.app/privacy.html) and [Terms of Use](https://buki-iota.vercel.app/terms.html) are served with the application.
+Before publishing, verify the full flow in the deployed app and configure rate limits and spending controls in the hosting, LLM, and Google Cloud consoles. After this version is deployed, Buki's [Privacy Policy](https://buki-sandy.vercel.app/privacy.html) and [Terms of Use](https://buki-sandy.vercel.app/terms.html) are served with the application.
 
 ## Project documents
 
