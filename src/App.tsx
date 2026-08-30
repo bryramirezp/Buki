@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { StopCard } from './components/StopCard'
 import { WebMcpInspector } from './components/WebMcpInspector'
 import type {
   AppliedGoogleStopRepair,
@@ -28,13 +29,27 @@ import type {
   PlannerReadyResponse,
   PlannerResponse,
   TripLocation,
-  TripPlace,
   TripPlan,
   TripRequest,
   TripStop,
 } from './types'
 import { useWebMcp } from './hooks/useWebMcp'
 import type { BukiWebMcpActions } from './integrations/webmcp'
+import {
+  activeStopIdAfterReplacement,
+  activeStopIdAfterUndo,
+  advanceProgress,
+  firstProgressStopId,
+  getProgressStops,
+  resolveActiveStop,
+} from './plannerState'
+import {
+  isPlannerResponse,
+  plannerAnswersFromToolInput,
+  pointFromToolInput,
+  searchRadiusFromToolInput,
+} from './plannerInput'
+import { formatDistance, formatSnapshotTimestamp } from './plannerPresentation'
 
 type MapState = 'loading' | 'ready' | 'error' | 'unavailable'
 type LocationState = 'idle' | 'picking' | 'requesting' | 'resolving' | 'selected' | 'denied' | 'unsupported'
@@ -44,18 +59,6 @@ const DEFAULT_INTENT = ''
 const DEFAULT_MAP_CENTER: GeoPoint = { lat: 20, lng: 0 }
 const DEFAULT_MAP_ZOOM = MINIMUM_MAP_ZOOM
 const SELECTED_POINT_ZOOM = 15
-
-const KIND_LABELS = {
-  food: 'Eat something local',
-  culture: 'Culture',
-  view: 'Viewpoint',
-} as const
-
-const KIND_SYMBOLS = {
-  food: '✦',
-  culture: '◇',
-  view: '△',
-} as const
 
 const DURATION_OPTIONS = [
   { label: '30 minutes', value: 30 },
@@ -76,10 +79,6 @@ const TIME_LIMIT_NOTICE = 'No nearby route fits the time you chose.'
 const apiUrl = import.meta.env.VITE_BUKI_API_URL ?? ''
 const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? ''
 const mapsMapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim() ?? ''
-
-function formatDistance(meters: number) {
-  return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${meters} m`
-}
 
 function coordinateDetail(coordinates: GeoPoint) {
   return `${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}`
@@ -104,70 +103,6 @@ function getPlannerErrorMessage(error: unknown) {
   return 'We could not interpret that request. Please try again.'
 }
 
-function isPlannerResponse(value: unknown): value is PlannerResponse {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Record<string, unknown>
-  const preferences = candidate.preferences
-  if (!preferences || typeof preferences !== 'object' || typeof candidate.intent !== 'string') return false
-  const parsedPreferences = preferences as Record<string, unknown>
-  if (candidate.mode === 'clarification') {
-    return (
-      (candidate.nextQuestion === 'duration' || candidate.nextQuestion === 'walking') &&
-      (parsedPreferences.availableMinutes === undefined || typeof parsedPreferences.availableMinutes === 'number') &&
-      (parsedPreferences.maxWalkMinutes === undefined || typeof parsedPreferences.maxWalkMinutes === 'number')
-    )
-  }
-  const request = candidate.request
-  if (!request || typeof request !== 'object') return false
-  const parsedRequest = request as Record<string, unknown>
-  return (
-    candidate.mode === 'ready' &&
-    typeof candidate.title === 'string' &&
-    typeof candidate.explanation === 'string' &&
-    typeof parsedPreferences.availableMinutes === 'number' &&
-    typeof parsedPreferences.maxWalkMinutes === 'number' &&
-    Array.isArray(parsedRequest.interests) &&
-    typeof parsedRequest.availableMinutes === 'number' &&
-    typeof parsedRequest.maxWalkMinutes === 'number' &&
-    (parsedRequest.stopCount === 2 || parsedRequest.stopCount === 3)
-  )
-}
-
-function pointFromToolInput(input: Record<string, unknown>): GeoPoint | null {
-  const latitude = input.latitude
-  const longitude = input.longitude
-  if (typeof latitude !== 'number' || typeof longitude !== 'number') return null
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null
-  return { lat: latitude, lng: longitude }
-}
-
-function searchRadiusFromToolInput(input: Record<string, unknown>) {
-  if (input.radiusMeters === undefined) return undefined
-  const radiusMeters = input.radiusMeters
-  if (typeof radiusMeters !== 'number' || !Number.isFinite(radiusMeters) || radiusMeters < 100 || radiusMeters > 50000) {
-    throw new Error('VALID_RADIUS_METERS_REQUIRED')
-  }
-  return Math.round(radiusMeters)
-}
-
-function plannerAnswersFromToolInput(input: Record<string, unknown>): PlannerAnswers {
-  const answers: PlannerAnswers = {}
-  if (input.availableMinutes !== undefined) {
-    if (typeof input.availableMinutes !== 'number' || !Number.isFinite(input.availableMinutes) || input.availableMinutes < 30 || input.availableMinutes > 720) {
-      throw new Error('VALID_AVAILABLE_MINUTES_REQUIRED')
-    }
-    answers.availableMinutes = Math.round(input.availableMinutes)
-  }
-  if (input.maxWalkMinutes !== undefined) {
-    if (typeof input.maxWalkMinutes !== 'number' || !Number.isFinite(input.maxWalkMinutes) || input.maxWalkMinutes < 5 || input.maxWalkMinutes > 90) {
-      throw new Error('VALID_MAX_WALK_MINUTES_REQUIRED')
-    }
-    answers.maxWalkMinutes = Math.round(input.maxWalkMinutes)
-  }
-  return answers
-}
-
 function App() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const googleMapRef = useRef<GoogleMapsController | null>(null)
@@ -185,7 +120,7 @@ function App() {
   const [intent, setIntent] = useState(DEFAULT_INTENT)
   const [origin, setOrigin] = useState<TripLocation | null>(null)
   const [plan, setPlan] = useState<TripPlan | null>(null)
-  const [activeStopIndex, setActiveStopIndex] = useState(0)
+  const [activeStopId, setActiveStopId] = useState<string | null>(null)
   const [repairProposal, setRepairProposal] = useState<GoogleStopRepairProposal | null>(null)
   const [appliedRepair, setAppliedRepair] = useState<AppliedGoogleStopRepair | null>(null)
   const [repairingStopId, setRepairingStopId] = useState<string | null>(null)
@@ -209,7 +144,7 @@ function App() {
         googleMapRef.current = controller
         enableGoogleMapPointSelection(controller, (coordinates) => {
           if (!mapPointSelectionRef.current) return
-          void selectOriginFromPoint(coordinates, 'map')
+          void selectOriginFromPoint(coordinates, 'map').catch(() => undefined)
         })
         setMapState('ready')
         return controller
@@ -240,9 +175,10 @@ function App() {
 
   const stops = plan?.stops ?? []
   const availableStops = stops.filter((stop) => stop.place.availability !== 'closed')
-  const currentStop = availableStops.length
-    ? availableStops[Math.min(activeStopIndex, availableStops.length - 1)]
-    : undefined
+  const progressStops = getProgressStops(stops)
+  const currentStop = resolveActiveStop(stops, activeStopId)
+  const currentStopIndex = currentStop ? progressStops.findIndex((stop) => stop.id === currentStop.id) : -1
+  const allStopsClosed = Boolean(stops.length) && availableStops.length === 0
   const totalWalkingMinutes = plan?.totalWalkingMinutes ?? 0
   const totalEstimatedMinutes = plan?.totalEstimatedMinutes ?? 0
   const mapLabel = mapState === 'ready'
@@ -266,38 +202,46 @@ function App() {
     mapPointSelectionRef.current = false
     setLocationState('resolving')
     setNotice('Looking up the selected location…')
-
-    const controller = await ensureGoogleMap(coordinates, SELECTED_POINT_ZOOM)
-    let name = source === 'device' ? 'Current location' : 'Selected point'
-    let detail = coordinateDetail(coordinates)
+    let controller: GoogleMapsController | null = null
     try {
-      const address = await describeGoogleMapPoint(coordinates)
-      name = address.name
-      detail = address.detail
-    } catch {
-      // Coordinates remain a truthful fallback if reverse geocoding is unavailable.
-    }
+      controller = googleMapRef.current ?? await ensureGoogleMap(coordinates, SELECTED_POINT_ZOOM)
+      let name = source === 'device' ? 'Current location' : 'Selected point'
+      let detail = coordinateDetail(coordinates)
+      try {
+        const address = await describeGoogleMapPoint(coordinates)
+        name = address.name
+        detail = address.detail
+      } catch {
+        // Coordinates remain a truthful fallback if reverse geocoding is unavailable.
+      }
 
-    const nextOrigin: TripLocation = {
-      id: `point-${coordinates.lat.toFixed(6)}-${coordinates.lng.toFixed(6)}`,
-      name,
-      detail,
-      coordinates,
+      const nextOrigin: TripLocation = {
+        id: `point-${coordinates.lat.toFixed(6)}-${coordinates.lng.toFixed(6)}`,
+        name,
+        detail,
+        coordinates,
+      }
+      moveGoogleMap(controller, nextOrigin.coordinates, SELECTED_POINT_ZOOM)
+      updateGoogleMapMarkers(controller, nextOrigin, [])
+      clearGoogleMapRoute(controller)
+      setOrigin(nextOrigin)
+      setOriginMethod(source)
+      setPlan(null)
+      setActiveStopId(null)
+      setRepairProposal(null)
+      setAppliedRepair(null)
+      setRepairingStopId(null)
+      setLocationState('selected')
+      setNotice(source === 'device'
+        ? 'Your current location is ready. Describe what you want to do to build a route.'
+        : 'Starting point selected. Describe what you want to do to build a route.')
+      return nextOrigin
+    } catch (error) {
+      if (controller && origin) moveGoogleMap(controller, origin.coordinates, SELECTED_POINT_ZOOM)
+      setLocationState(origin ? 'selected' : 'idle')
+      setNotice(getGoogleErrorMessage(error))
+      throw error
     }
-    setOrigin(nextOrigin)
-    setOriginMethod(source)
-    setPlan(null)
-    setActiveStopIndex(0)
-    setRepairProposal(null)
-    setAppliedRepair(null)
-    setRepairingStopId(null)
-    clearGoogleMapRoute(controller)
-    updateGoogleMapMarkers(controller, nextOrigin, [])
-    setLocationState('selected')
-    setNotice(source === 'device'
-      ? 'Your current location is ready. Describe what you want to do to build a route.'
-      : 'Starting point selected. Describe what you want to do to build a route.')
-    return nextOrigin
   }
 
   async function startMapPointSelection() {
@@ -401,15 +345,6 @@ function App() {
     }
   }
 
-  function clearDraftRoute() {
-    if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
-    setPlan(null)
-    setActiveStopIndex(0)
-    setRepairProposal(null)
-    setAppliedRepair(null)
-    setRepairingStopId(null)
-  }
-
   function adjustRouteConstraint(question: PlannerQuestion) {
     const nextAnswers: PlannerAnswers = { ...plannerAnswers }
     if (question === 'walking') {
@@ -420,7 +355,6 @@ function App() {
       delete nextAnswers.duration
     }
 
-    clearDraftRoute()
     setPlannerAnswers(nextAnswers)
     setClarification({
       mode: 'clarification',
@@ -429,7 +363,7 @@ function App() {
       nextQuestion: question,
     })
     setReadyPlanner(null)
-    setPlannerRequest(null)
+    if (!plan) setPlannerRequest(null)
     setCustomAnswer('')
     setNotice('')
   }
@@ -447,7 +381,6 @@ function App() {
     setIsPlanning(true)
     setNotice('Buki is shaping your plan…')
     beginPlanningActivity('Thinking about your plan…')
-    clearDraftRoute()
     try {
       const planner = await requestLlmPlan(nextIntent, answers)
       setIntent(planner.intent)
@@ -455,7 +388,7 @@ function App() {
       if (planner.mode === 'clarification') {
         setClarification(planner)
         setReadyPlanner(null)
-        setPlannerRequest(null)
+        if (!plan) setPlannerRequest(null)
         setNotice(planner.nextQuestion === 'duration'
           ? 'One detail to shape your plan: how much time do you have?'
           : 'One more thing for a comfortable route: how much walking feels right today?')
@@ -464,7 +397,7 @@ function App() {
 
       setClarification(null)
       setReadyPlanner(planner)
-      setPlannerRequest(planner.request)
+      if (!plan) setPlannerRequest(planner.request)
       setNotice('Your plan is shaped. Create it when you are ready to find real places and routes.')
       return planner
     } catch (error) {
@@ -512,11 +445,16 @@ function App() {
     setIsPlanning(true)
     setNotice('Finding real places and calculating the walking route…')
     beginPlanningActivity('Looking for real places near your starting point')
-    clearDraftRoute()
     try {
       const realPlan = await fetchRealPlan(planner.request, planner.title)
       setPlan(realPlan)
-      setActiveStopIndex(0)
+      setPlannerRequest(planner.request)
+      setActiveStopId(firstProgressStopId(realPlan.stops))
+      setClarification(null)
+      setReadyPlanner(null)
+      setRepairProposal(null)
+      setAppliedRepair(null)
+      setRepairingStopId(null)
       setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
       return realPlan
     } catch (error) {
@@ -562,7 +500,12 @@ function App() {
     if (!plan || !repairProposal || !googleMapRef.current) return
     const applied = applyGoogleStopRepair(googleMapRef.current, plan, repairProposal)
     setPlan(repairProposal.repairedPlan)
-    setActiveStopIndex(Math.min(activeStopIndex, repairProposal.repairedPlan.stops.length - 1))
+    setActiveStopId(activeStopIdAfterReplacement(
+      activeStopId,
+      repairProposal.originalStop.id,
+      repairProposal.replacementStop.id,
+      repairProposal.repairedPlan.stops,
+    ))
     setAppliedRepair(applied)
     setRepairProposal(null)
     setNotice('')
@@ -577,31 +520,33 @@ function App() {
     if (!appliedRepair || !googleMapRef.current) return
     undoGoogleStopRepair(googleMapRef.current, appliedRepair)
     setPlan(appliedRepair.previousPlan)
-    setActiveStopIndex(0)
+    setActiveStopId(activeStopIdAfterUndo(
+      activeStopId,
+      appliedRepair.proposal.originalStop.id,
+      appliedRepair.proposal.replacementStop.id,
+      appliedRepair.previousPlan.stops,
+    ))
     setAppliedRepair(null)
     setNotice('')
   }
 
   function moveToNextStop() {
-    if (!availableStops.length) {
+    if (!plan) {
       setNotice('Create a walk before starting a leg.')
       return { status: 'needs_plan' as const, nextStop: null }
     }
-    if (activeStopIndex >= availableStops.length - 1) {
-      setNotice('You reached the end of the route. You can return to any stop in the plan.')
-      return {
-        status: 'complete' as const,
-        nextStop: availableStops[activeStopIndex] ? {
-          id: availableStops[activeStopIndex].id,
-          name: availableStops[activeStopIndex].place.name,
-        } : null,
-      }
+    const result = advanceProgress(stops, activeStopId)
+    if (result.status === 'needs_repair') {
+      setNotice('Every stop in this route is currently unavailable. Choose a stop below and ask Buki to find a replacement.')
+      return result
     }
-    const nextIndex = activeStopIndex + 1
-    const nextStop = availableStops[nextIndex]
-    setActiveStopIndex(nextIndex)
-    setNotice(`Next: ${nextStop.place.name}.`)
-    return { status: 'ok' as const, nextStop: { id: nextStop.id, name: nextStop.place.name } }
+    if (result.status === 'complete') {
+      setNotice('You reached the end of the route. You can return to any stop in the plan.')
+      return result
+    }
+    setActiveStopId(result.activeStopId)
+    setNotice(`Next: ${result.nextStop.name}.`)
+    return result
   }
 
   function serializePlanData(currentPlan: TripPlan) {
@@ -680,13 +625,13 @@ function App() {
   }
 
   const webMcpActions: BukiWebMcpActions = {
-    async searchNearbyPlaces(input) {
+    async replanRoute(input) {
       if (!origin) throw new Error('ORIGIN_REQUIRED')
       if (!mapsApiKey) throw new Error('GOOGLE_MAPS_KEY_MISSING')
       if (!plannerRequest) {
         return {
           status: 'needs_clarification',
-          message: 'Use plan_walk with the person’s intent and preferences before searching for a route.',
+          message: 'Use plan_walk with the person’s intent and preferences before replanning the route.',
         }
       }
       const requestedKind = input.kind === undefined
@@ -701,38 +646,50 @@ function App() {
         ...(radiusMeters ? { searchRadiusMeters: radiusMeters } : {}),
       }
       setNotice('An agent is building a new real nearby route…')
+      setIsPlanning(true)
       beginPlanningActivity('Looking for real places near your starting point')
-      if (googleMapRef.current) clearGoogleMapRoute(googleMapRef.current)
-      setPlan(null)
       try {
         const realPlan = await fetchRealPlan(request)
         setPlan(realPlan)
-        setActiveStopIndex(0)
+        setPlannerRequest(request)
+        setPlannerAnswers({
+          availableMinutes: request.availableMinutes,
+          maxWalkMinutes: request.maxWalkMinutes,
+        })
+        setClarification(null)
+        setReadyPlanner(null)
+        setActiveStopId(firstProgressStopId(realPlan.stops))
+        setRepairProposal(null)
+        setAppliedRepair(null)
+        setRepairingStopId(null)
+        setNotice(`Real replacement plan ready with ${realPlan.stops.length} nearby places.`)
         return { status: 'ok', source: 'google-maps', itinerary: serializePlanData(realPlan) }
       } catch (error) {
         const message = getGoogleErrorMessage(error)
         setNotice(message)
         throw new Error(message)
       } finally {
+        setIsPlanning(false)
         finishPlanningActivity()
       }
     },
-    getPlaceStatus(input) {
+    getPlanPlaceSnapshot(input) {
       const stop = findToolStop({ stopId: input.placeId })
       if (!stop) throw new Error('PLACE_NOT_FOUND')
       return {
         status: 'ok',
+        freshness: 'plan_snapshot',
         placeId: stop.place.id,
         name: stop.place.name,
         availability: stop.place.availability,
         availabilityLabel: stop.place.availabilityLabel,
-        checkedAt: stop.place.checkedAt,
+        capturedAt: stop.place.checkedAt,
       }
     },
-    computeWalkingRoute(input) {
+    getPlannedLeg(input) {
       const stop = findToolStop({ stopId: input.toPlaceId })
       if (!stop) throw new Error('DESTINATION_NOT_FOUND')
-      return { status: 'ok', route: stop.walkFromPrevious, source: 'google-maps' }
+      return { status: 'ok', route: stop.walkFromPrevious, source: 'google-maps-plan' }
     },
     getItinerary: serializePlan,
     async planWalk(input) {
@@ -757,17 +714,21 @@ function App() {
     focusStop(input) {
       const stop = findToolStop(input)
       if (!stop) throw new Error('STOP_NOT_FOUND')
-      const nextIndex = availableStops.findIndex((item) => item.id === stop.id)
-      if (nextIndex < 0) throw new Error('STOP_NOT_AVAILABLE')
-      setActiveStopIndex(nextIndex)
+      if (!progressStops.some((item) => item.id === stop.id)) throw new Error('STOP_NOT_AVAILABLE')
+      setActiveStopId(stop.id)
       setNotice(`Next stop focused: ${stop.place.name}.`)
       return { status: 'ok', focusedStopId: stop.id, name: stop.place.name }
     },
     async setOrigin(input) {
       const coordinates = pointFromToolInput(input)
       if (!coordinates) throw new Error('VALID_LATITUDE_AND_LONGITUDE_REQUIRED')
+      const hadPlan = Boolean(plan)
       const selectedOrigin = await selectOriginFromPoint(coordinates, 'agent')
-      return { status: 'ok', origin: { id: selectedOrigin.id, name: selectedOrigin.name, detail: selectedOrigin.detail } }
+      return {
+        status: 'ok',
+        origin: { id: selectedOrigin.id, name: selectedOrigin.name, detail: selectedOrigin.detail },
+        previousPlanRemoved: hadPlan,
+      }
     },
     updateIntent(input) {
       const nextIntent = typeof input.intent === 'string' ? input.intent.trim() : ''
@@ -776,11 +737,9 @@ function App() {
       setPlannerAnswers({})
       setClarification(null)
       setReadyPlanner(null)
-      setPlannerRequest(null)
-      setRepairProposal(null)
-      setAppliedRepair(null)
+      if (!plan) setPlannerRequest(null)
       setNotice('Intent updated by an agent. It has not built a route yet.')
-      return { status: 'ok', intent: nextIntent, planUpdated: false }
+      return { status: 'ok', intent: nextIntent, planUpdated: false, existingPlanPreserved: Boolean(plan) }
     },
     advanceToNextStop() {
       return moveToNextStop()
@@ -795,13 +754,19 @@ function App() {
     getBukiContext() {
       return {
         app: 'buki',
-        webmcp: Boolean(document.modelContext),
         mapSource: plan?.source ?? 'pending',
         origin: origin?.name ?? null,
-        preferences: readyPlanner?.preferences ?? clarification?.preferences ?? plannerAnswers,
+        preferences: plan && plannerRequest
+          ? {
+              availableMinutes: plannerRequest.availableMinutes,
+              maxWalkMinutes: plannerRequest.maxWalkMinutes,
+            }
+          : readyPlanner?.preferences ?? clarification?.preferences ?? plannerAnswers,
         nextQuestion: clarification?.nextQuestion ?? null,
         stopCount: stops.length,
+        activeStopId: currentStop?.id ?? null,
         repair: repairProposal ? 'awaiting_user_confirmation' : appliedRepair ? 'applied_can_undo' : 'none',
+        pendingRepair: repairProposal ? serializeStopRepairProposal(repairProposal) : null,
         manualControlsAvailable: true,
       }
     },
@@ -811,9 +776,9 @@ function App() {
 
   const plannerSubmitLabel = isPlanning
     ? planningActivityLabel || 'Buki is thinking…'
-    : plan ? 'Walk created'
-      : readyPlanner ? 'Create my walk'
-          : clarification ? 'Continue with this answer'
+    : readyPlanner ? plan ? 'Replace current walk' : 'Create my walk'
+      : clarification ? 'Continue with this answer'
+        : plan ? 'Shape a new walk'
           : 'Continue when ready'
 
   const routeConstraint = notice === WALK_LIMIT_NOTICE
@@ -828,9 +793,8 @@ function App() {
       setPlannerAnswers({})
       setClarification(null)
       setReadyPlanner(null)
-      setPlannerRequest(null)
+      if (!plan) setPlannerRequest(null)
       setCustomAnswer('')
-      clearDraftRoute()
       setNotice('Your request changed. Continue when you are ready and Buki will shape it again.')
     }
   }
@@ -976,7 +940,7 @@ function App() {
               )}
             </section>
 
-            <button className={`primary-button planner-submit ${isPlanning ? 'is-thinking' : ''}`} type="submit" disabled={isPlanning || Boolean(plan)}>
+            <button className={`primary-button planner-submit ${isPlanning ? 'is-thinking' : ''}`} type="submit" disabled={isPlanning}>
               <span className="planner-submit-number" aria-hidden="true">3</span>
               <span>{plannerSubmitLabel}</span>
               {isPlanning ? (
@@ -1024,8 +988,21 @@ function App() {
                 <span>{currentStop.walkFromPrevious.minutes} min from here</span>
                 <span>{formatDistance(currentStop.walkFromPrevious.meters)}</span>
               </div>
-              <button className="dark-button" type="button" onClick={moveToNextStop}>
-                {activeStopIndex >= availableStops.length - 1 ? 'Mark route complete' : 'Start this leg'}
+              <button
+                className="dark-button"
+                type="button"
+                onClick={() => {
+                  if (allStopsClosed) {
+                    void requestStopRepair(currentStop.id).catch(() => undefined)
+                  } else {
+                    moveToNextStop()
+                  }
+                }}
+                disabled={allStopsClosed && Boolean(repairProposal || appliedRepair || repairingStopId)}
+              >
+                {allStopsClosed
+                  ? 'Find a replacement'
+                  : currentStopIndex >= progressStops.length - 1 ? 'Mark route complete' : 'Start this leg'}
                 <span aria-hidden="true">→</span>
               </button>
             </section>
@@ -1101,9 +1078,17 @@ function App() {
           {plan && (
             <footer className="data-footer">
               <span className="data-dot" />
-              <span>{plan.checkedAt} · Data may change.</span>
+              <span className="google-maps-attribution" translate="no">Google Maps</span>
+            <span>· {formatSnapshotTimestamp(plan.checkedAt)} · Data may change.</span>
             </footer>
           )}
+          <footer className="site-legal-footer" aria-label="Legal information">
+            <span>Buki uses Google Maps Platform data and an LLM to shape plans.</span>
+            <nav aria-label="Policies">
+              <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a>
+              <a href="/terms.html" target="_blank" rel="noreferrer">Terms</a>
+            </nav>
+          </footer>
         </div>
       </section>
       <WebMcpInspector
@@ -1116,52 +1101,6 @@ function App() {
         calls={webmcp.calls}
       />
     </main>
-  )
-}
-
-interface StopCardProps {
-  stop: TripStop
-  isCurrent: boolean
-  showWalking: boolean
-  onRequestRepair: () => void
-  isRepairing: boolean
-  repairDisabled: boolean
-}
-
-function StopCard({ stop, isCurrent, showWalking, onRequestRepair, isRepairing, repairDisabled }: StopCardProps) {
-  const place: TripPlace = stop.place
-  const isClosed = place.availability === 'closed'
-
-  return (
-    <div className="stop-group">
-      {showWalking && (
-        <div className="walking-connector">
-          <span className="connector-line" />
-          <span><strong>{stop.walkFromPrevious.minutes} min</strong> · {formatDistance(stop.walkFromPrevious.meters)} walking</span>
-        </div>
-      )}
-      <article className={`stop-card ${isCurrent ? 'is-current' : ''} ${isClosed ? 'is-closed' : ''}`}>
-        <div className="stop-number">{stop.sequence.toString().padStart(2, '0')}</div>
-        <div className="stop-card-body">
-          <div className="stop-card-topline">
-            <span className="stop-kind">{KIND_SYMBOLS[place.kind]} {KIND_LABELS[place.kind]}</span>
-            <span className={`availability availability-${place.availability}`}>{place.availabilityLabel}</span>
-          </div>
-          <h3>{place.name}</h3>
-          <p>{place.summary}</p>
-          <div className="stop-card-details">
-            <span>{place.address}</span>
-            <span>{place.checkedAt}</span>
-          </div>
-          {place.mapsUrl && <a className="maps-link" href={place.mapsUrl} target="_blank" rel="noreferrer">View on Google Maps ↗</a>}
-          <button className="repair-stop-button" type="button" onClick={onRequestRepair} disabled={repairDisabled}>
-            {isRepairing ? 'Finding an alternative…' : isClosed ? 'Find a real replacement' : 'This place is unavailable'}
-            <span aria-hidden="true">→</span>
-          </button>
-          {isClosed && <p className="availability-note">Buki will search real nearby places that keep your route constraints.</p>}
-        </div>
-      </article>
-    </div>
   )
 }
 

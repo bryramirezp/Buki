@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="index,follow" />
+    <title>Privacy Policy · Buki</title>
+    <link rel="stylesheet" href="/legal.css" />
+  </head>
+  <body>
+    <main>
+      <a class="brand" href="/">← Buki</a>
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: August 29, 2026</p>
+
+      <p class="notice">Buki is a public prototype for creating short walking plans. It has no accounts and does not operate an application database for user profiles or itineraries.</p>
+
+      <h2>Information Buki processes</h2>
+      <ul>
+        <li><strong>Location:</strong> if you approve device location or choose a point on the map, its coordinates are used to display the map, describe the origin, find nearby places, and calculate walking routes.</li>
+        <li><strong>Planning request:</strong> the intent and preferences you enter, such as available time and walking comfort, are sent to Buki's server-side planning function and its configured language-model provider.</li>
+        <li><strong>Technical information:</strong> the hosting platform and service providers may process IP address, request metadata, error logs, and usage information needed to operate and protect the service.</li>
+      </ul>
+
+      <h2>How information is used</h2>
+      <p>Buki uses this information only to interpret the request, retrieve real place and route data, show the resulting itinerary, prevent abuse, and diagnose failures. Buki does not sell personal information or use it to build advertising profiles.</p>
+
+      <h2>Storage and retention</h2>
+      <p>The current itinerary is held in the browser's in-memory application state and is cleared when the page session ends or the plan is replaced. Buki does not intentionally persist itineraries in its own database. Hosting, mapping, and language-model providers may retain operational records under their own policies.</p>
+
+      <h2>Service providers</h2>
+      <p>Buki uses Google Maps Platform for maps, geocoding, places, opening information, and walking routes. Use of Google Maps features is subject to the <a href="https://maps.google.com/help/terms_maps/" target="_blank" rel="noreferrer">Google Maps/Google Earth Additional Terms</a> and the <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">Google Privacy Policy</a>.</p>
+      <p>Buki is hosted on Vercel and calls a configured language-model provider from a server-side function. Do not enter secrets, payment information, medical information, or other sensitive personal data in a planning request.</p>
+
+      <h2>Your choices</h2>
+      <p>You can decline browser geolocation and choose a point manually. You can also stop using Buki at any time and close or reload the page to clear its in-memory plan state.</p>
+
+      <h2>Questions</h2>
+      <p>For questions or privacy concerns, open an issue in the <a href="https://github.com/bryramirezp/Buki/issues" target="_blank" rel="noreferrer">public Buki repository</a>.</p>
+
+      <footer><a href="/terms.html">Terms of Use</a> · <a href="/">Return to Buki</a></footer>
+    </main>
+  </body>
+</html>

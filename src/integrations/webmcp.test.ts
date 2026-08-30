@@ -8,9 +8,9 @@ import {
 
 function createActions(getItinerary: BukiWebMcpActions['getItinerary']): BukiWebMcpActions {
   return {
-    searchNearbyPlaces: () => ({ status: 'ok' }),
-    getPlaceStatus: () => ({ status: 'ok' }),
-    computeWalkingRoute: () => ({ status: 'ok' }),
+    replanRoute: () => ({ status: 'ok' }),
+    getPlanPlaceSnapshot: () => ({ status: 'ok' }),
+    getPlannedLeg: () => ({ status: 'ok' }),
     getItinerary,
     planWalk: () => ({ status: 'ok' }),
     focusStop: () => ({ status: 'ok' }),
@@ -77,20 +77,27 @@ describe('Buki WebMCP tools', () => {
 
   it('keeps schemas and annotations honest', () => {
     const names = BUKI_WEBMCP_TOOLS.map((tool) => tool.name)
-    const search = getDefinition('search_nearby_places')
-    const route = getDefinition('compute_walking_route')
+    const replan = getDefinition('replan_route')
+    const route = getDefinition('get_planned_leg')
+    const snapshot = getDefinition('get_plan_place_snapshot')
     const planWalk = getDefinition('plan_walk')
     const repair = getDefinition('propose_stop_repair')
 
     expect(names).toContain('plan_walk')
     expect(names).toContain('propose_stop_repair')
     expect(names).not.toContain('propose_itinerary')
-    expect(search.annotations).toEqual({ untrustedContentHint: true })
+    expect(names).not.toContain('search_nearby_places')
+    expect(names).not.toContain('get_place_status')
+    expect(names).not.toContain('compute_walking_route')
+    expect(replan.annotations).toEqual({ untrustedContentHint: true })
     expect(route.inputSchema.properties).toHaveProperty('toPlaceId')
     expect(route.inputSchema.properties).not.toHaveProperty('fromPlaceId')
+    expect(snapshot.description).toContain('does not perform a fresh Maps query')
     expect(planWalk.inputSchema.properties).toHaveProperty('availableMinutes')
     expect(planWalk.inputSchema.properties).toHaveProperty('maxWalkMinutes')
     expect(repair.inputSchema.properties).toHaveProperty('stopId')
     expect(repair.inputSchema.required).toEqual(['stopId'])
+    expect(BUKI_WEBMCP_TOOLS.every((tool) => tool.outputSchema.type === 'object')).toBe(true)
+    expect(repair.outputSchema.properties).toHaveProperty('requiresUserConfirmation')
   })
 })

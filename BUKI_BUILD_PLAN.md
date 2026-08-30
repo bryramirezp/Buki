@@ -1,6 +1,6 @@
 # Buki — Build Plan
 
-Status: real-data flow and stop repair implemented locally; deployment and field verification pending.
+Status: real-data flow, transactional replanning, and stop repair are implemented. Deterministic and simulated-flow tests passed locally on August 30, 2026; field verification and current production configuration verification remain pending.
 Initial validation scenario: Santiago Center, Chile.
 Base document: [BUKI_PRODUCT_CONTRACT.md](./BUKI_PRODUCT_CONTRACT.md)
 
@@ -33,7 +33,7 @@ Complete files will not be copied between projects.
 - WebMCP tool registration.
 - Agent action history.
 - Proposal → validation → confirmation pattern.
-- Playwright E2E tests.
+- Playwright E2E testing approach as a historical reference; no Playwright suite was carried into Buki.
 - Manual fallback when WebMCP is unavailable.
 
 ### Rewritten
@@ -228,15 +228,15 @@ Phase output: the first local slice is implemented; the validation scenario can 
 
 ### Phase 5 — Minimal WebMCP
 
-Status: foundation implemented in parallel for the challenge; manual natural-language planning is now connected to the server-side adapter.
+Status: implemented. The eleven-tool contract has input/output schemas, a visible inspector, deterministic state tests, and a simulated LLM/Maps flow test.
 
 Objective: allow an agent to use Buki's real capabilities.
 
 Currently registered tools:
 
-- `search_nearby_places`;
-- `get_place_status`;
-- `compute_walking_route`;
+- `replan_route`;
+- `get_plan_place_snapshot`;
+- `get_planned_leg`;
 - `get_itinerary`;
 - `plan_walk`;
 - `focus_stop`;
@@ -261,7 +261,7 @@ A large tool catalog will not be implemented yet. Expanding WebMCP remains a dis
 
 ### Phase 6 — Stop repair
 
-Status: implemented locally; requires real-world verification before it is considered field-ready.
+Status: implemented locally. Proposal, confirmation, active-stop identity, and undo are covered by deterministic and simulated-flow tests; real-world availability changes still require field verification before the feature is considered field-ready.
 
 Objective: demonstrate adaptation without rebuilding the entire itinerary.
 

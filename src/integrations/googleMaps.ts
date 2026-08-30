@@ -1,4 +1,11 @@
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
+import {
+  assertRouteFitsRequest,
+  buildPlaceCombinations,
+  findFittingPlaceRoute,
+  STOP_DURATION_MINUTES,
+  type RouteMetrics,
+} from '../routePlanning'
 import type { GeoPoint, PlaceAvailability, PlaceKind, TripLocation, TripPlan, TripPlace, TripRequest, TripStop, WalkingSegment } from '../types'
 
 export interface GoogleMapsController {
@@ -17,9 +24,7 @@ interface NearbyCandidate {
   kind: PlaceKind
 }
 
-interface RouteResult {
-  segments: WalkingSegment[]
-  warnings: string[]
+export interface RouteResult extends RouteMetrics {
   route: google.maps.routes.Route
 }
 
@@ -47,14 +52,9 @@ const CATEGORY_LABELS: Record<PlaceKind, string> = {
   view: 'outdoor activity',
 }
 
-const STOP_DURATION_MINUTES: Record<PlaceKind, number> = {
-  food: 30,
-  culture: 45,
-  view: 15,
-}
-
 const DEFAULT_SEARCH_RADIUS_METERS = 1800
 const REPAIR_CANDIDATE_COUNT = 3
+const INITIAL_CANDIDATES_PER_KIND = 3
 
 export interface GoogleStopRepairProposal {
   originalStop: TripStop
@@ -189,9 +189,6 @@ export function updateGoogleMapMarkers(
   origin: TripLocation,
   stops: TripStop[],
 ) {
-  controller.markers.forEach((marker) => { marker.map = null })
-  controller.markers = []
-
   const createMarker = (position: GeoPoint, title: string, glyphText: string, zIndex: number) => {
     const pin = new google.maps.marker.PinElement({
       background: '#e56e47',
@@ -208,16 +205,24 @@ export function updateGoogleMapMarkers(
     })
   }
 
-  controller.markers.push(createMarker(origin.coordinates, origin.name, '●', 10))
+  const nextMarkers: google.maps.marker.AdvancedMarkerElement[] = []
+  try {
+    nextMarkers.push(createMarker(origin.coordinates, origin.name, '●', 10))
+    stops.forEach((stop) => {
+      nextMarkers.push(createMarker(
+        stop.place.coordinates,
+        stop.place.name,
+        String(stop.sequence),
+        stop.sequence,
+      ))
+    })
+  } catch (error) {
+    nextMarkers.forEach((marker) => { marker.map = null })
+    throw error
+  }
 
-  stops.forEach((stop) => {
-    controller.markers.push(createMarker(
-      stop.place.coordinates,
-      stop.place.name,
-      String(stop.sequence),
-      stop.sequence,
-    ))
-  })
+  controller.markers.forEach((marker) => { marker.map = null })
+  controller.markers = nextMarkers
 }
 
 function searchRadiusMeters(radiusMeters?: number) {
@@ -295,13 +300,13 @@ async function fetchPlaceDetails(candidate: NearbyCandidate): Promise<TripPlace 
     address: place.formattedAddress ?? 'Address unavailable',
     availability,
     availabilityLabel,
-    checkedAt: `Checked now · ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
+    checkedAt: new Date().toISOString(),
     coordinates: { lat: place.location.lat(), lng: place.location.lng() },
     mapsUrl: place.googleMapsURI ?? undefined,
   }
 }
 
-async function searchFinalPlaces(
+async function searchCandidatePlaces(
   origin: GeoPoint,
   request?: TripRequest,
   onProgress?: (message: GoogleMapProgress) => void,
@@ -312,7 +317,12 @@ async function searchFinalPlaces(
   const candidateGroups = await Promise.all(
     kinds.map(async (kind) => {
       try {
-        return await findNearbyByKind(origin, kind, desiredStops, request?.searchRadiusMeters)
+        return await findNearbyByKind(
+          origin,
+          kind,
+          Math.max(desiredStops, INITIAL_CANDIDATES_PER_KIND),
+          request?.searchRadiusMeters,
+        )
       } catch {
         return []
       }
@@ -320,22 +330,31 @@ async function searchFinalPlaces(
   )
 
   const finalists: NearbyCandidate[] = []
-  for (let candidateIndex = 0; finalists.length < desiredStops; candidateIndex += 1) {
-    let addedCandidate = false
+  const seenPlaceIds = new Set<string>()
+  for (let candidateIndex = 0; ; candidateIndex += 1) {
+    let foundCandidate = false
     for (const candidates of candidateGroups) {
       const candidate = candidates[candidateIndex]
-      if (candidate) {
+      if (candidate) foundCandidate = true
+      if (candidate && !seenPlaceIds.has(candidate.place.id)) {
         finalists.push(candidate)
-        addedCandidate = true
+        seenPlaceIds.add(candidate.place.id)
       }
-      if (finalists.length >= desiredStops) break
     }
-    if (!addedCandidate) break
+    if (!foundCandidate) break
   }
 
   onProgress?.('Checking nearby place details')
-  const places = await Promise.all(finalists.map(fetchPlaceDetails))
-  return places.filter((place): place is TripPlace => Boolean(place))
+  const places = await Promise.all(finalists.map(async (candidate) => {
+    try {
+      return await fetchPlaceDetails(candidate)
+    } catch {
+      return null
+    }
+  }))
+  return places
+    .filter((place): place is TripPlace => place !== null && place.availability !== 'closed')
+    .sort((left, right) => Number(left.availability === 'unknown') - Number(right.availability === 'unknown'))
 }
 
 async function computeWalkingRoute(
@@ -383,18 +402,6 @@ async function computeWalkingRoute(
   }
 }
 
-function assertRouteFitsRequest(route: RouteResult, places: TripPlace[], request?: TripRequest) {
-  if (!request) return
-  if (route.segments.some((segment) => segment.minutes > request.maxWalkMinutes)) {
-    throw new Error('GOOGLE_MAPS_ROUTE_EXCEEDS_WALK_LIMIT')
-  }
-  const walkingMinutes = route.segments.reduce((total, segment) => total + segment.minutes, 0)
-  const stopMinutes = places.reduce((total, place) => total + STOP_DURATION_MINUTES[place.kind], 0)
-  if (walkingMinutes + stopMinutes > request.availableMinutes) {
-    throw new Error('GOOGLE_MAPS_ROUTE_EXCEEDS_TIME_LIMIT')
-  }
-}
-
 function createTripPlan(
   origin: TripLocation,
   title: string,
@@ -424,21 +431,27 @@ function createTripPlan(
       + places.reduce((sum, place) => sum + STOP_DURATION_MINUTES[place.kind], 0),
     stops,
     source: 'google-maps',
-    checkedAt: `Google Maps · ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`,
+    checkedAt: new Date().toISOString(),
     routeWarnings: [...new Set([...route.warnings, ...extraWarnings])],
   }
 }
 
 function drawWalkingRoute(controller: GoogleMapsController, route: google.maps.routes.Route) {
-  clearGoogleMapRoute(controller)
-  controller.routePolylines = route.createPolylines({
+  const nextPolylines = route.createPolylines({
     polylineOptions: {
       strokeColor: '#e56e47',
       strokeOpacity: 0.95,
       strokeWeight: 5,
     },
   })
-  controller.routePolylines.forEach((polyline) => polyline.setMap(controller.map))
+  try {
+    nextPolylines.forEach((polyline) => polyline.setMap(controller.map))
+  } catch (error) {
+    nextPolylines.forEach((polyline) => polyline.setMap(null))
+    throw error
+  }
+  controller.routePolylines.forEach((polyline) => polyline.setMap(null))
+  controller.routePolylines = nextPolylines
 }
 
 export async function buildGoogleTripPlan(
@@ -451,17 +464,37 @@ export async function buildGoogleTripPlan(
 ): Promise<TripPlan> {
   if (!origin.coordinates) throw new Error('GOOGLE_MAPS_ORIGIN_MISSING')
 
-  const places = await searchFinalPlaces(origin.coordinates, request, onProgress)
-  if (places.length < 2) throw new Error('GOOGLE_MAPS_NOT_ENOUGH_PLACES')
+  const candidates = await searchCandidatePlaces(origin.coordinates, request, onProgress)
+  if (candidates.length < 2) throw new Error('GOOGLE_MAPS_NOT_ENOUGH_PLACES')
 
-  clearGoogleMapRoute(controller)
+  const combinations = buildPlaceCombinations(candidates, request?.stopCount ?? 3)
   onProgress?.('Calculating a walkable route')
-  const route = await computeWalkingRoute(origin.coordinates, places)
-  assertRouteFitsRequest(route, places, request)
+  const { places, route } = await findFittingPlaceRoute(
+    combinations,
+    request,
+    (candidatePlaces) => computeWalkingRoute(origin.coordinates, candidatePlaces),
+  )
   onProgress?.('Adding the route to your map')
+  const previousRoutePolylines = controller.routePolylines
   drawWalkingRoute(controller, route.route)
-  const plan = createTripPlan(origin, title, city, places, route)
-  updateGoogleMapMarkers(controller, origin, plan.stops)
+  const plan = createTripPlan(
+    origin,
+    title,
+    city,
+    places,
+    route,
+    request && places.length < request.stopCount
+      ? [`A ${request.stopCount}-stop route did not fit the approved limits; Buki selected ${places.length} stops instead.`]
+      : [],
+  )
+  try {
+    updateGoogleMapMarkers(controller, origin, plan.stops)
+  } catch (error) {
+    clearGoogleMapRoute(controller)
+    controller.routePolylines = previousRoutePolylines
+    controller.routePolylines.forEach((polyline) => polyline.setMap(controller.map))
+    throw error
+  }
   return plan
 }
 

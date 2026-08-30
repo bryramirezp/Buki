@@ -1,6 +1,6 @@
 # Buki — Product Contract
 
-Status: Phase 0 defined
+Status: MVP contract current; local real-plan verification and simulated LLM/Maps flow coverage completed, with production and field validation pending
 Date: August 28, 2026
 Initial validation scenario: Santiago Center, Chile.
 
@@ -116,9 +116,9 @@ The map and frontend-compatible Google Maps requests can run in the browser usin
 
 WebMCP is an interaction layer for the agent, not the value proposition for the person. The initial tools are conceptually:
 
-- `search_nearby_places`;
-- `get_place_status`;
-- `compute_walking_route`;
+- `replan_route`;
+- `get_plan_place_snapshot`;
+- `get_planned_leg`;
 - `plan_walk`;
 - `focus_stop`.
 

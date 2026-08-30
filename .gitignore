@@ -9,4 +9,9 @@ backend/
 __pycache__/
 *.pyc
 *.tsbuildinfo
-critica.md
+# Local review and submission-preparation material
+/critica.md
+/retroalimentacion.md
+/SUBMISSION.md
+/recordings/
+/demo-video.*

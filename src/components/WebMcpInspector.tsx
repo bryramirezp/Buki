@@ -98,6 +98,7 @@ export function WebMcpInspector({
                 <p>{tool.description}</p>
                 <div className="webmcp-tool-meta">
                   <span>{registered ? 'Browser parameters:' : 'Local parameters:'}{schemaFields(schema)}</span>
+                  <span>Output fields:{schemaFields(tool.outputSchema)}</span>
                   {annotations?.readOnlyHint && <span className="webmcp-readonly">Read-only</span>}
                   {annotations?.untrustedContentHint && <span>Third-party content</span>}
                 </div>

@@ -37,14 +37,25 @@ function localPlanApi(): Plugin {
             statusCode = code
             return handlerResponse
           },
+          setHeader(name: string, value: string) {
+            response.setHeader(name, value)
+          },
           json(body: unknown) {
             sendJson(response, statusCode, body)
           },
         }
 
         try {
-          const body = request.method === 'POST' ? await readJsonBody(request) : undefined
-          await planHandler({ method: request.method, body }, handlerResponse)
+          const contentType = request.headers['content-type']
+          const shouldParseJson = request.method === 'POST'
+            && (contentType === undefined || contentType.toLowerCase().startsWith('application/json'))
+          const body = shouldParseJson ? await readJsonBody(request) : undefined
+          await planHandler({
+            method: request.method,
+            body,
+            headers: request.headers,
+            socket: { remoteAddress: request.socket.remoteAddress },
+          }, handlerResponse)
         } catch (error) {
           const message = error instanceof Error && error.message === 'INVALID_JSON_BODY'
             ? 'Request body must be valid JSON.'
