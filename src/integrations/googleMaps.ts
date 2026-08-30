@@ -74,6 +74,7 @@ export interface AppliedGoogleStopRepair {
 }
 
 export const MINIMUM_MAP_ZOOM = 3
+export const INITIAL_MAP_ZOOM = MINIMUM_MAP_ZOOM + 1
 export const MAXIMUM_MAP_ZOOM = 20
 export const BUKI_MAP_BOUNDS: google.maps.LatLngBoundsLiteral = {
   north: 85,
@@ -89,7 +90,7 @@ export function createBukiMapOptions(center: GeoPoint, mapId: string, zoom = 15)
     mapId: mapId || 'DEMO_MAP_ID',
     mapTypeControl: false,
     streetViewControl: false,
-    fullscreenControl: true,
+    fullscreenControl: false,
     zoomControl: true,
     clickableIcons: false,
     gestureHandling: 'greedy',

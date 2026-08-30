@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BUKI_MAP_BOUNDS, createBukiMapOptions, MAXIMUM_MAP_ZOOM, MINIMUM_MAP_ZOOM } from './googleMaps'
+import { BUKI_MAP_BOUNDS, createBukiMapOptions, INITIAL_MAP_ZOOM, MAXIMUM_MAP_ZOOM, MINIMUM_MAP_ZOOM } from './googleMaps'
 
 describe('Buki map interaction', () => {
   it('keeps the global map inside real-world bounds and prevents over-zooming out', () => {
@@ -23,9 +23,15 @@ describe('Buki map interaction', () => {
     expect(options).toMatchObject({
       zoom: MAXIMUM_MAP_ZOOM,
       zoomControl: true,
-      fullscreenControl: true,
+      fullscreenControl: false,
       keyboardShortcuts: true,
       mapId: 'DEMO_MAP_ID',
     })
+  })
+
+  it('starts one level above the global minimum so zoom out remains useful', () => {
+    const options = createBukiMapOptions({ lat: 20, lng: 0 }, 'map-id', INITIAL_MAP_ZOOM)
+
+    expect(options.zoom).toBe(MINIMUM_MAP_ZOOM + 1)
   })
 })

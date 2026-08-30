@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { StopCard } from './components/StopCard'
 import { WebMcpInspector } from './components/WebMcpInspector'
 import type {
@@ -11,7 +11,7 @@ import {
   applyGoogleStopRepair,
   buildGoogleTripPlan,
   clearGoogleMapRoute,
-  MINIMUM_MAP_ZOOM,
+  INITIAL_MAP_ZOOM,
   createGoogleMap,
   describeGoogleMapPoint,
   enableGoogleMapPointSelection,
@@ -57,7 +57,7 @@ type OriginMethod = 'device' | 'map' | 'agent' | null
 
 const DEFAULT_INTENT = ''
 const DEFAULT_MAP_CENTER: GeoPoint = { lat: 20, lng: 0 }
-const DEFAULT_MAP_ZOOM = MINIMUM_MAP_ZOOM
+const DEFAULT_MAP_ZOOM = INITIAL_MAP_ZOOM
 const SELECTED_POINT_ZOOM = 15
 
 const DURATION_OPTIONS = [
@@ -108,6 +108,8 @@ function App() {
   const googleMapRef = useRef<GoogleMapsController | null>(null)
   const mapInitializationRef = useRef<Promise<GoogleMapsController> | null>(null)
   const mapPointSelectionRef = useRef(false)
+  const sheetDragStartYRef = useRef<number | null>(null)
+  const sheetDidDragRef = useRef(false)
   const [mapState, setMapState] = useState<MapState>(mapsApiKey ? 'loading' : 'unavailable')
   const [locationState, setLocationState] = useState<LocationState>('idle')
   const [originMethod, setOriginMethod] = useState<OriginMethod>(null)
@@ -128,6 +130,7 @@ function App() {
   const [notice, setNotice] = useState('')
   const [mapError, setMapError] = useState('')
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [isSheetCollapsed, setIsSheetCollapsed] = useState(false)
 
   async function ensureGoogleMap(center = DEFAULT_MAP_CENTER, zoom = DEFAULT_MAP_ZOOM) {
     if (!mapsApiKey) throw new Error('GOOGLE_MAPS_KEY_MISSING')
@@ -799,8 +802,48 @@ function App() {
     }
   }
 
+  function toggleSheet() {
+    if (sheetDidDragRef.current) {
+      sheetDidDragRef.current = false
+      return
+    }
+    setIsSheetCollapsed((collapsed) => !collapsed)
+  }
+
+  function startSheetDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    sheetDragStartYRef.current = event.clientY
+    sheetDidDragRef.current = false
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function applySheetDrag(distance: number) {
+    if (Math.abs(distance) < 32) return
+    sheetDidDragRef.current = true
+    setIsSheetCollapsed(distance > 0)
+  }
+
+  function moveSheetDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const startY = sheetDragStartYRef.current
+    if (startY === null) return
+    applySheetDrag(event.clientY - startY)
+  }
+
+  function finishSheetDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const startY = sheetDragStartYRef.current
+    sheetDragStartYRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (startY === null) return
+    applySheetDrag(event.clientY - startY)
+  }
+
+  function cancelSheetDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    sheetDragStartYRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
   return (
-    <main className={`app-shell ${mapState === 'ready' ? 'has-real-map' : ''}`}>
+    <main className={`app-shell ${mapState === 'ready' ? 'has-real-map' : ''} ${isSheetCollapsed ? 'is-sheet-collapsed' : ''}`}>
       <section className={`map-stage ${mapState === 'ready' ? 'is-google-map' : ''}`} aria-label="Google Maps">
         <div ref={mapContainerRef} className={`google-map-canvas ${mapState === 'ready' ? 'is-visible' : 'is-hidden'}`} aria-hidden={mapState !== 'ready'} />
         {mapState !== 'ready' && (
@@ -836,13 +879,27 @@ function App() {
             <strong>{plan ? `${stops.length} stops` : 'No route yet'}</strong>
             {plan && <><span>·</span><strong>{totalWalkingMinutes} min walking</strong><span>·</span><strong>{totalEstimatedMinutes} min total</strong></>}
           </div>
-          {plan && <span>{`${plan.checkedAt}${plan.routeWarnings?.length ? ' · Review warnings' : ''}`}</span>}
+          {plan && <span>{`${formatSnapshotTimestamp(plan.checkedAt)}${plan.routeWarnings?.length ? ' · Review warnings' : ''}`}</span>}
         </div>
       </section>
 
-      <section className="plan-sheet" aria-labelledby="plan-title">
-        <div className="sheet-grabber" aria-hidden="true" />
-        <div className="plan-content">
+      <section className={`plan-sheet ${isSheetCollapsed ? 'is-collapsed' : ''}`} aria-labelledby="plan-title" aria-label={isSheetCollapsed ? 'Planning panel' : undefined}>
+        <button
+          className="sheet-toggle"
+          type="button"
+          aria-controls="plan-content"
+          aria-expanded={!isSheetCollapsed}
+          onClick={toggleSheet}
+          onPointerDown={startSheetDrag}
+          onPointerMove={moveSheetDrag}
+          onPointerUp={finishSheetDrag}
+          onPointerCancel={cancelSheetDrag}
+        >
+          <span className="sheet-grabber" aria-hidden="true" />
+          <span className="sheet-toggle-label">{isSheetCollapsed ? 'Show planner' : 'Show more map'}</span>
+          <span className="sheet-toggle-icon" aria-hidden="true">{isSheetCollapsed ? '↑' : '↓'}</span>
+        </button>
+        <div id="plan-content" className="plan-content" hidden={isSheetCollapsed}>
           <header className="plan-header">
             <div>
               <h1 id="plan-title">{plan?.title ?? 'Make today count.'}</h1>
