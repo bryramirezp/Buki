@@ -263,12 +263,18 @@ h1, h2, h3 { letter-spacing: -.045em; }
 .webmcp-tool-card p { margin-bottom: .55rem; color: #748278; font-size: .7rem; line-height: 1.35; }
 .webmcp-tool-meta { display: flex; flex-wrap: wrap; gap: .35rem .7rem; color: #9a9b91; font-size: .6rem; }
 .webmcp-readonly { color: #568267; font-weight: 750; }
-.webmcp-call-log { margin: 0 1.25rem 1rem; padding: .85rem; border: 1px solid #e2dfd4; border-radius: .85rem; background: #efeee5; }
-.webmcp-log-header { display: flex; justify-content: space-between; gap: 1rem; align-items: end; }
+.webmcp-call-log { flex: 0 0 auto; margin: 0 1.25rem 1rem; padding: .85rem; border: 1px solid #e2dfd4; border-radius: .85rem; background: #efeee5; }
+.webmcp-log-header { display: flex; justify-content: space-between; gap: 1rem; align-items: end; cursor: pointer; list-style: none; }
+.webmcp-log-header::-webkit-details-marker { display: none; }
+.webmcp-log-header::marker { content: ''; }
+.webmcp-log-header:focus { outline: none; }
+.webmcp-log-header:focus-visible { outline: 3px solid rgba(100,157,115,.3); outline-offset: .3rem; border-radius: .45rem; }
 .webmcp-log-header .section-kicker { margin-bottom: .25rem; }
 .webmcp-log-header h3 { margin-bottom: 0; font-size: .98rem; }
-.webmcp-log-header > span { color: #8b938b; font-size: .62rem; }
-.webmcp-call-list { display: grid; gap: .42rem; margin-top: .7rem; }
+.webmcp-log-summary { display: inline-flex; align-items: center; gap: .4rem; color: #8b938b; font-size: .62rem; white-space: nowrap; }
+.webmcp-log-summary::after { content: '⌄'; color: #557464; font-size: .88rem; line-height: 1; transition: transform .18s ease; }
+.webmcp-call-log[open] .webmcp-log-summary::after { transform: rotate(180deg); }
+.webmcp-call-list { display: grid; max-height: min(34svh, 18rem); gap: .42rem; margin-top: .7rem; overflow-y: auto; overscroll-behavior: contain; }
 .webmcp-call-row { display: grid; grid-template-columns: auto auto 1fr auto; gap: .45rem; align-items: center; padding-top: .45rem; border-top: 1px solid #deddd2; color: #7d897f; font-size: .62rem; }
 .webmcp-call-dot.is-success { background: #66a878; }
 .webmcp-call-dot.is-error { background: #cf795c; }

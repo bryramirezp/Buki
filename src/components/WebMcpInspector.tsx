@@ -107,14 +107,14 @@ export function WebMcpInspector({
           })}
         </div>
 
-        <section className="webmcp-call-log" aria-labelledby="webmcp-call-log-title">
-          <div className="webmcp-log-header">
+        <details className="webmcp-call-log" aria-labelledby="webmcp-call-log-title">
+          <summary className="webmcp-log-header">
             <div>
               <p className="section-kicker">Activity</p>
               <h3 id="webmcp-call-log-title">Recent calls</h3>
             </div>
-            <span>{calls.length ? `${calls.length} recorded` : 'No calls yet'}</span>
-          </div>
+            <span className="webmcp-log-summary">{calls.length ? `${calls.length} recorded` : 'No calls yet'}</span>
+          </summary>
           {calls.length ? (
             <div className="webmcp-call-list">
               {calls.map((call) => (
@@ -129,7 +129,7 @@ export function WebMcpInspector({
           ) : (
             <p className="webmcp-empty-log">When an agent uses a tool, its summarized result will appear here.</p>
           )}
-        </section>
+        </details>
 
         <footer className="webmcp-modal-footer">
           <span>Actions that change the plan remain visible in Buki.</span>

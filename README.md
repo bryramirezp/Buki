@@ -1,32 +1,32 @@
 # Buki
 
-**Turn “what should I do today?” into a real, walkable itinerary.**
+**Arrived somewhere new? Turn “what can I do here?” into a real, walkable itinerary.**
 
 [Try the live WebMCP experience](https://buki-sandy.vercel.app/)
 
-Buki starts with a real location and a natural-language idea—not a fictional route. It asks only for the details that make a plan practical, then uses Google Maps to find real nearby places and calculate a walking route.
+Buki is for the moment you have time to spare in an unfamiliar place and no obvious next move. Start from a real location and describe what sounds good in your own words. Buki asks for the minutes and walking limit that make the walk practical, then uses Google Maps to find real nearby places and calculate the walking routes between them.
 
-![Buki on desktop: an embedded Google Map showing a three-stop walking route through Santiago Centro, beside the plan panel with the itinerary and the person's time and walking limits.](./docs/screenshots/desktop-plan.jpg)
+![Buki on desktop: an embedded Google Map showing a three-stop walking route through Santiago Centro, beside the walk panel with the itinerary and the person's time and walking limits.](./docs/screenshots/desktop-plan.jpg)
 
-*A real plan built from Plaza de Armas, Santiago: three stops, 36 minutes of walking, every leg within the 20-minute limit the person chose.*
+*A real walk from Plaza de Armas, Santiago: three stops, 36 minutes of walking, every leg within the 20-minute limit the person chose.*
 
 ## The experience
 
 1. Choose your current location or drop a pin anywhere in the world.
 2. Describe what you would enjoy in your own words.
 3. Buki asks for time and walking comfort when they are missing.
-4. Create a plan built from real places and real walking routes.
+4. Create a walk built from real places and real walking routes.
 
-There are no hidden walking or time defaults. If a stop no longer works, Buki can propose a real nearby replacement that preserves the route constraints; the person decides whether to apply it or undo it.
+There are no hidden walking or time defaults. If a stop no longer works, Buki can propose a real nearby replacement that preserves the route constraints. The person decides whether to apply it.
 
 The map behaves like an app, with direct pan and zoom, native zoom controls, and bounded global navigation that prevents empty or duplicated world views.
 
 The whole story works on a phone-sized screen:
 
-| The route on the map | Buki asks instead of guessing | The plan, stop by stop |
+| The walk on the map | Buki asks instead of guessing | The itinerary, stop by stop |
 | --- | --- | --- |
-| ![Mobile view: the embedded map fills the top of the screen with the walking route and numbered stops; the plan sheet below shows the title and the captured preferences.](./docs/screenshots/mobile-plan.jpg) | ![Mobile view: after a new request, Buki asks "How much time would you like to spend?" with four options rather than assuming a duration. The previously built plan stays visible below.](./docs/screenshots/mobile-clarification.jpg) | ![Mobile view: the next-stop card for Wonderland Café, followed by the suggested route listing each stop with its walking time, address, snapshot time and a link to Google Maps.](./docs/screenshots/mobile-stops.jpg) |
-| The map stays inside Buki, so the person never switches apps to follow the plan. | A new request never invents a duration or a walking limit—and the plan already on screen is left untouched until a replacement succeeds. | Each stop carries its real address, the walking leg that reaches it, and the time its availability was captured. |
+| ![Mobile view: the embedded map fills the top of the screen with the walking route and numbered stops; the walk sheet below shows the title and the captured preferences.](./docs/screenshots/mobile-plan.jpg) | ![Mobile view: after a new request, Buki asks "How much time would you like to spend?" with four options rather than assuming a duration. The current itinerary stays visible below.](./docs/screenshots/mobile-clarification.jpg) | ![Mobile view: the next-stop card for Wonderland Café, followed by the suggested route listing each stop with its walking time, address, snapshot time and a link to Google Maps.](./docs/screenshots/mobile-stops.jpg) |
+| The map stays inside Buki, so the person never switches apps to follow the walk. | A new request never invents a duration or a walking limit—and the itinerary already on screen is left untouched until a replacement succeeds. | Each stop carries its real address, the walking leg that reaches it, and the time its availability was captured. |
 
 ## WebMCP: the same journey for an agent
 
@@ -38,7 +38,7 @@ Buki exposes eleven WebMCP tools so a compatible browser agent can work through 
 4. Read and guide the visible itinerary with `get_itinerary`, `get_plan_place_snapshot`, `get_planned_leg`, `focus_stop`, and `advance_to_next_stop`.
 5. Call `propose_stop_repair` if a person says a stop is unavailable. Buki shows the real alternative and requires the person to confirm or keep the current route.
 
-`replan_route` only works after Buki has the person’s planning preferences, keeps the current route intact until a replacement succeeds, and tries alternative place combinations before rejecting the approved limits. Availability returned by `get_plan_place_snapshot` is explicitly the timestamped snapshot captured while building the current plan, not a fresh lookup. The **WebMCP · 11 tools** button opens an in-app inspector with input schemas, output schemas, and recent calls.
+`replan_route` only works after Buki has the person’s time and walking preferences, keeps the current route intact until a replacement succeeds, and tries alternative place combinations before rejecting the approved limits. Availability returned by `get_plan_place_snapshot` is explicitly the timestamped snapshot captured while building the current itinerary, not a fresh lookup. The **WebMCP · 11 tools** button opens an in-app inspector with input schemas, output schemas, and recent calls.
 
 ![The in-app WebMCP inspector, reporting 11 of 11 tools registered with the browser. Each card shows the tool name, its browser-registered input parameters, its output fields, and annotations such as Read-only.](./docs/screenshots/webmcp-inspector.jpg)
 
@@ -74,9 +74,9 @@ The name says what the tool does: it reads a leg Buki already calculated, rather
 
 ## Why WebMCP matters here
 
-A normal map interface can show places, but it does not give an agent a reliable contract for the person's current origin, constraints, itinerary, active stop, and repair state. WebMCP lets the agent read and act on that same live state without scraping the screen. The person remains in the visible Buki experience, while the agent can ask for missing constraints, build the route, guide the next stop, and propose a real replacement when the plan changes.
+A traveler arriving in an unfamiliar neighbourhood needs more than map pins. They need nearby places that fit the time they have and a walking route that connects them. A normal map interface does not give an agent a reliable contract for the person's current origin, limits, itinerary, active stop, and repair state. WebMCP lets the agent read and act on that same live state without scraping the screen. The person remains in the visible Buki experience, while the agent can ask for missing limits, build the route, guide the next stop, and propose a real replacement when the itinerary changes.
 
-Buki's differentiators are deliberate: it refuses to invent missing time or walking limits, uses Google Maps rather than LLM-generated places, and treats stop repair as a visible proposal that requires human confirmation.
+Buki refuses to invent missing time or walking limits, uses Google Maps rather than LLM-generated places, and treats stop repair as a visible proposal that requires human confirmation.
 
 ## Architecture
 
@@ -101,7 +101,7 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-`npm run dev` serves both the Vite interface and a local adapter for `/api/plan`; no Vercel CLI or login is required. The adapter invokes the same server-side handler that Vercel will run after deployment, so local planning does not call a deployed Vercel Function.
+`npm run dev` serves both the Vite interface and a local adapter for `/api/plan`; no Vercel CLI or login is required. The adapter invokes the same server-side handler that Vercel will run after deployment, so local route creation does not call a deployed Vercel Function.
 
 Minimum configuration:
 

@@ -377,13 +377,13 @@ function App() {
       throw new Error('INTENT_REQUIRED')
     }
     if (!origin) {
-      setNotice('Choose your current location or a point on the map before shaping a route.')
+      setNotice('Choose your starting point or a point on the map before building a route.')
       throw new Error('ORIGIN_REQUIRED')
     }
 
     setIsPlanning(true)
-    setNotice('Buki is shaping your plan…')
-    beginPlanningActivity('Thinking about your plan…')
+    setNotice('Buki is reading your request…')
+    beginPlanningActivity('Reading your request…')
     try {
       const planner = await requestLlmPlan(nextIntent, answers)
       setIntent(planner.intent)
@@ -393,7 +393,7 @@ function App() {
         setReadyPlanner(null)
         if (!plan) setPlannerRequest(null)
         setNotice(planner.nextQuestion === 'duration'
-          ? 'One detail to shape your plan: how much time do you have?'
+          ? 'One detail for your walk: how much time do you have?'
           : 'One more thing for a comfortable route: how much walking feels right today?')
         return planner
       }
@@ -401,7 +401,7 @@ function App() {
       setClarification(null)
       setReadyPlanner(planner)
       if (!plan) setPlannerRequest(planner.request)
-      setNotice('Your plan is shaped. Create it when you are ready to find real places and routes.')
+      setNotice('Your request is clear. Create your walk when you are ready to find real nearby places and routes.')
       return planner
     } catch (error) {
       setNotice(getPlannerErrorMessage(error))
@@ -437,7 +437,7 @@ function App() {
 
   async function createRealPlan(planner: PlannerReadyResponse) {
     if (!origin) {
-      setNotice('Choose your current location or a point on the map before creating a route.')
+      setNotice('Choose your starting point or a point on the map before creating a route.')
       throw new Error('ORIGIN_REQUIRED')
     }
     if (!mapsApiKey) {
@@ -458,7 +458,7 @@ function App() {
       setRepairProposal(null)
       setAppliedRepair(null)
       setRepairingStopId(null)
-      setNotice(planner.explanation || `Real plan ready with ${realPlan.stops.length} nearby places.`)
+      setNotice(planner.explanation || `Your walk is ready with ${realPlan.stops.length} nearby places.`)
       return realPlan
     } catch (error) {
       setNotice(getPlannerErrorMessage(error))
@@ -544,7 +544,7 @@ function App() {
       return result
     }
     if (result.status === 'complete') {
-      setNotice('You reached the end of the route. You can return to any stop in the plan.')
+      setNotice('You reached the end of the route. You can return to any stop in the itinerary.')
       return result
     }
     setActiveStopId(result.activeStopId)
@@ -665,7 +665,7 @@ function App() {
         setRepairProposal(null)
         setAppliedRepair(null)
         setRepairingStopId(null)
-        setNotice(`Real replacement plan ready with ${realPlan.stops.length} nearby places.`)
+        setNotice(`Your replacement walk is ready with ${realPlan.stops.length} nearby places.`)
         return { status: 'ok', source: 'google-maps', itinerary: serializePlanData(realPlan) }
       } catch (error) {
         const message = getGoogleErrorMessage(error)
@@ -741,7 +741,7 @@ function App() {
       setClarification(null)
       setReadyPlanner(null)
       if (!plan) setPlannerRequest(null)
-      setNotice('Intent updated by an agent. It has not built a route yet.')
+      setNotice('Intent updated by an agent. It has not created a walk yet.')
       return { status: 'ok', intent: nextIntent, planUpdated: false, existingPlanPreserved: Boolean(plan) }
     },
     advanceToNextStop() {
@@ -870,8 +870,8 @@ function App() {
 
         <div className="map-location-label">
           <span className="pulse-dot" />
-          {origin ? origin.name : 'Choose a starting point'}
-          <small>{origin ? origin.detail : 'Use your location or tap a pin on the map.'}</small>
+          {origin ? origin.name : 'Choose your starting point'}
+          <small>{origin ? origin.detail : 'Use your location or choose a point on the map.'}</small>
         </div>
 
         <div className="map-footer">
@@ -883,7 +883,7 @@ function App() {
         </div>
       </section>
 
-      <section className={`plan-sheet ${isSheetCollapsed ? 'is-collapsed' : ''}`} aria-labelledby="plan-title" aria-label={isSheetCollapsed ? 'Planning panel' : undefined}>
+      <section className={`plan-sheet ${isSheetCollapsed ? 'is-collapsed' : ''}`} aria-labelledby="plan-title" aria-label={isSheetCollapsed ? 'Walk details' : undefined}>
         <button
           className="sheet-toggle"
           type="button"
@@ -902,8 +902,8 @@ function App() {
         <div id="plan-content" className="plan-content" hidden={isSheetCollapsed}>
           <header className="plan-header">
             <div>
-              <h1 id="plan-title">{plan?.title ?? 'Make today count.'}</h1>
-              <p className="plan-location">{plan ? `${plan.city} · ${totalWalkingMinutes} min walking · ${totalEstimatedMinutes} min total` : 'A real, walkable itinerary for the mood you’re in—ready in three simple steps.'}</p>
+              <h1 id="plan-title">{plan?.title ?? 'What can you do here?'}</h1>
+              <p className="plan-location">{plan ? `${plan.city} · ${totalWalkingMinutes} min walking · ${totalEstimatedMinutes} min total` : 'Tell Buki what sounds good. It creates a real, walkable itinerary from nearby places and walking routes.'}</p>
             </div>
           </header>
 
@@ -911,7 +911,7 @@ function App() {
             <section className="planner-step origin-step" aria-labelledby="location-title">
               <div className="planner-step-heading">
                 <span className="planner-step-number" aria-hidden="true">1</span>
-                <h2 id="location-title">Choose a starting point</h2>
+                <h2 id="location-title">Where are you starting?</h2>
               </div>
               <div className="origin-options">
                 <button
@@ -941,7 +941,7 @@ function App() {
             <section className="planner-step intent-step" aria-labelledby="intent-title">
               <div className="planner-step-heading">
                 <span className="planner-step-number" aria-hidden="true">2</span>
-                <h2 id="intent-title">What would you enjoy?</h2>
+                <h2 id="intent-title">What are you in the mood for?</h2>
               </div>
               {clarification || readyPlanner ? (
                 <div className="captured-intent">
@@ -951,12 +951,12 @@ function App() {
                 </div>
               ) : (
                 <label className="intent-input" htmlFor="intent">
-                  <textarea id="intent" value={intent} onChange={(event) => updateIntentDraft(event.target.value)} rows={2} aria-label="What would you enjoy?" />
+                  <textarea id="intent" value={intent} onChange={(event) => updateIntentDraft(event.target.value)} rows={2} placeholder="Coffee, a museum, a quiet view…" aria-label="What are you in the mood for?" />
                 </label>
               )}
 
               {(plannerAnswers.availableMinutes || plannerAnswers.maxWalkMinutes) && (
-                <div className="preference-summary" aria-label="Your plan preferences">
+                <div className="preference-summary" aria-label="Your walk preferences">
                   {plannerAnswers.availableMinutes && <span>◷ {plannerAnswers.availableMinutes >= 60 ? `${plannerAnswers.availableMinutes / 60} ${plannerAnswers.availableMinutes === 60 ? 'hour' : 'hours'}` : `${plannerAnswers.availableMinutes} minutes`}</span>}
                   {plannerAnswers.maxWalkMinutes && <span>♧ {plannerAnswers.maxWalkMinutes} min max per walk</span>}
                 </div>
@@ -964,7 +964,7 @@ function App() {
 
               {clarification && (
                 <div className="clarification-card" aria-live="polite">
-                  <p className="clarification-kicker">{clarification.nextQuestion === 'duration' ? 'One detail to shape your plan' : 'One more thing for a comfortable route'}</p>
+                  <p className="clarification-kicker">{clarification.nextQuestion === 'duration' ? 'One detail for your walk' : 'One detail for a comfortable walk'}</p>
                   <h3>{clarification.nextQuestion === 'duration' ? 'How much time would you like to spend?' : 'How much walking feels comfortable today?'}</h3>
                   <div className="clarification-options">
                     {(clarification.nextQuestion === 'duration' ? DURATION_OPTIONS : WALKING_OPTIONS).map((option) => (
@@ -993,7 +993,7 @@ function App() {
               )}
 
               {readyPlanner && (
-                <p className="planner-ready-message"><span aria-hidden="true">✧</span> Your day is shaped around you. Create it when you are ready.</p>
+                <p className="planner-ready-message"><span aria-hidden="true">✧</span> Your walk fits your time and walking limit. Create it when you are ready.</p>
               )}
             </section>
 
@@ -1010,7 +1010,7 @@ function App() {
 
           {routeConstraint && !isPlanning ? (
             <section className="constraint-notice" aria-live="assertive" aria-labelledby="constraint-notice-title">
-              <p className="section-kicker">Plan adjustment</p>
+              <p className="section-kicker">Route adjustment</p>
               <h2 id="constraint-notice-title">
                 {routeConstraint === 'walking' ? 'This route needs a little more walking room.' : 'This route needs a little more time.'}
               </h2>
@@ -1026,7 +1026,7 @@ function App() {
             </section>
           ) : (
             <>
-              {!plan && !isPlanning && !notice && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> We'll find real places and walking routes.</p>}
+              {!plan && !isPlanning && !notice && <p className="planner-assurance"><span aria-hidden="true">⌖✧</span> Nearby places. Real walking routes. Your pace.</p>}
               {notice && !isPlanning && <p className="notice" aria-live="polite">{notice}</p>}
             </>
           )}
@@ -1140,7 +1140,7 @@ function App() {
             </footer>
           )}
           <footer className="site-legal-footer" aria-label="Legal information">
-            <span>Buki uses Google Maps Platform data and an LLM to shape plans.</span>
+            <span>Buki uses Google Maps Platform data and an LLM to interpret your request.</span>
             <nav aria-label="Policies">
               <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a>
               <a href="/terms.html" target="_blank" rel="noreferrer">Terms</a>
