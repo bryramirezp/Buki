@@ -4,6 +4,8 @@
 
 [Try the live WebMCP experience](https://buki-sandy.vercel.app/)
 
+[Watch the demo on YouTube](https://youtu.be/yIUyNH2mVKs)
+
 Buki is for the moment you have time to spare in an unfamiliar place and no obvious next move. Start from a real location and describe what sounds good in your own words. Buki asks for the minutes and walking limit that make the walk practical, then uses Google Maps to find real nearby places and calculate the walking routes between them.
 
 ![Buki on desktop: an embedded Google Map showing a three-stop walking route through Santiago Centro, beside the walk panel with the itinerary and the person's time and walking limits.](./docs/screenshots/desktop-plan.jpg)
