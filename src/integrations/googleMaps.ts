@@ -262,6 +262,7 @@ async function fetchPlaceDetails(candidate: NearbyCandidate): Promise<TripPlace 
       'location',
       'googleMapsURI',
       'businessStatus',
+      'utcOffsetMinutes',
       'currentOpeningHours',
       'regularOpeningHours',
       'editorialSummary',
